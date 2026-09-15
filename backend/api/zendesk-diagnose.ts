@@ -1,0 +1,181 @@
+import type {
+  VercelRequest,
+  VercelResponse,
+} from '@vercel/node';
+
+function clean(value: string) {
+  return value
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\.zendesk\.com.*$/i, '')
+    .replace(/\/$/, '');
+}
+
+async function check(
+  base: string,
+  authorization: string,
+  path: string,
+  key?: string,
+) {
+  try {
+    const response = await fetch(
+      `${base}${path}`,
+      {
+        headers: {
+          Authorization:
+            authorization,
+          Accept: 'application/json',
+        },
+      },
+    );
+
+    const body: any =
+      await response
+        .json()
+        .catch(() => ({}));
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      count:
+        response.ok &&
+        key &&
+        Array.isArray(body?.[key])
+          ? body[key].length
+          : null,
+      error: response.ok
+        ? null
+        : body?.error ||
+          body?.description ||
+          body?.message ||
+          `HTTP ${response.status}`,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      status: null,
+      count: null,
+      error:
+        error?.message ||
+        'Request failed',
+    };
+  }
+}
+
+export default async function handler(
+  _req: VercelRequest,
+  res: VercelResponse,
+) {
+  const subdomain = clean(
+    String(
+      process.env
+        .ATOMOS_ZENDESK_SUBDOMAIN ||
+        '',
+    ),
+  );
+
+  const email = String(
+    process.env
+      .ATOMOS_ZENDESK_EMAIL || '',
+  ).trim();
+
+  const token = String(
+    process.env
+      .ATOMOS_ZENDESK_API_TOKEN ||
+      '',
+  ).trim();
+
+  if (
+    !subdomain ||
+    !email ||
+    !token
+  ) {
+    return res.status(200).json({
+      ok: false,
+      message:
+        'Atomos API-token fallback is incomplete.',
+    });
+  }
+
+  const authorization =
+    `Basic ${Buffer.from(
+      `${email}/token:${token}`,
+    ).toString('base64')}`;
+
+  const base =
+    `https://${subdomain}.zendesk.com`;
+
+  const sources = {
+    tickets: [
+      '/api/v2/tickets.json?per_page=5',
+      'tickets',
+    ],
+    forms: [
+      '/api/v2/ticket_forms.json?active=true',
+      'ticket_forms',
+    ],
+    fields: [
+      '/api/v2/ticket_fields.json',
+      'ticket_fields',
+    ],
+    groups: [
+      '/api/v2/groups.json?per_page=100',
+      'groups',
+    ],
+    agents: [
+      '/api/v2/users.json?role[]=agent&role[]=admin&per_page=100',
+      'users',
+    ],
+    views: [
+      '/api/v2/views.json?active=true',
+      'views',
+    ],
+    satisfaction: [
+      '/api/v2/satisfaction_ratings.json?per_page=100',
+      'satisfaction_ratings',
+    ],
+    metrics: [
+      '/api/v2/ticket_metrics.json?per_page=100',
+      'ticket_metrics',
+    ],
+  } as const;
+
+  const entries =
+    await Promise.all(
+      Object.entries(
+        sources,
+      ).map(
+        async ([
+          name,
+          [path, key],
+        ]) => [
+          name,
+          await check(
+            base,
+            authorization,
+            path,
+            key,
+          ),
+        ],
+      ),
+    );
+
+  return res.status(200).json({
+    ok: true,
+    service:
+      'Atomos Zendesk Source Diagnostics',
+    timestamp:
+      new Date().toISOString(),
+    authMode: 'api_token',
+    checks:
+      Object.fromEntries(entries),
+    oauthClient: {
+      configuredIdentifier:
+        process.env
+          .ATOMOS_ZENDESK_CLIENT_ID ||
+        null,
+      note:
+        'If Zendesk authorization shows "No such client", this exact identifier is not registered/saved in the Atomos Zendesk OAuth Clients list.',
+    },
+  });
+}
