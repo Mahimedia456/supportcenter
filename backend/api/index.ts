@@ -7,8 +7,25 @@ import { AppModule } from '../src/app.module';
 
 const server = express();
 
-// trust proxy belongs to the underlying Express app, not INestApplication
 server.set('trust proxy', 1);
+
+/**
+ * Vercel compatibility:
+ * - mobile should use base URL WITHOUT /api
+ * - but if /api is accidentally included, strip it before Nest routing
+ * - root URL resolves to /health for easy browser testing
+ */
+server.use((req, _res, next) => {
+  if (req.url === '/' || req.url === '') {
+    req.url = '/health';
+  } else if (req.url === '/api') {
+    req.url = '/health';
+  } else if (req.url.startsWith('/api/')) {
+    req.url = req.url.slice(4) || '/health';
+  }
+
+  next();
+});
 
 let appPromise: Promise<INestApplication> | null = null;
 

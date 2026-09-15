@@ -194,9 +194,7 @@ export default function LoginScreen() {
           />
 
           <Animated.View style={{ opacity: brandTextOpacity }}>
-            <Text style={s.brandTitle}>Support</Text>
-            <Text style={s.brandTitle}>Command Center</Text>
-            <Text style={s.brandSubtitle}>Zendesk Manager Console</Text>
+         
           </Animated.View>
         </Animated.View>
 
