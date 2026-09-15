@@ -1,29 +1,35 @@
 import type {
   ZendeskForm,
+  ZendeskMetricEvent,
   ZendeskSatisfactionRating,
   ZendeskTicket,
   ZendeskTicketField,
+  ZendeskTicketMetric,
 } from '@/lib/api';
 import {
   buildDeviceHealth,
 } from '@/lib/device-health';
-import {
-  buildBreakdown,
-} from '@/lib/insight-analytics';
 
 export type ManagerAlertKind =
+  | 'sla_breach'
+  | 'no_first_reply'
+  | 'slow_first_reply'
+  | 'unsolved_72h'
+  | 'unsolved_24h'
+  | 'stale'
+  | 'reopened'
   | 'priority'
   | 'unassigned'
-  | 'stale'
   | 'bad_csat'
-  | 'device_spike'
-  | 'region_spike'
-  | 'form_spike';
+  | 'device_spike';
 
 export type ManagerAlert = {
   id: string;
   kind: ManagerAlertKind;
-  severity: 'critical' | 'warning' | 'info';
+  severity:
+    | 'critical'
+    | 'warning'
+    | 'info';
   title: string;
   message: string;
   count: number;
@@ -31,83 +37,352 @@ export type ManagerAlert = {
   entityLabel?: string;
 };
 
-function updatedMs(ticket: ZendeskTicket) {
-  const value = new Date(ticket.updated_at || ticket.created_at || 0).getTime();
-  return Number.isFinite(value) ? value : 0;
+const HOUR =
+  60 * 60 * 1000;
+
+function ageHours(
+  value?: string | null,
+) {
+  const ms = new Date(
+    value || 0,
+  ).getTime();
+
+  if (!Number.isFinite(ms)) {
+    return 0;
+  }
+
+  return (
+    (Date.now() - ms) /
+    HOUR
+  );
 }
 
-function isActive(ticket: ZendeskTicket) {
-  return ['new', 'open', 'pending'].includes(
-    String(ticket.status || '').toLowerCase(),
+function active(
+  ticket: ZendeskTicket,
+) {
+  return [
+    'new',
+    'open',
+    'pending',
+    'hold',
+  ].includes(
+    String(
+      ticket.status || '',
+    ).toLowerCase(),
   );
 }
 
 export function buildManagerAlerts(
   tickets: ZendeskTicket[],
-  ratings: ZendeskSatisfactionRating[],
+  ratings:
+    ZendeskSatisfactionRating[],
   fields: ZendeskTicketField[],
   forms: ZendeskForm[],
+  metrics:
+    ZendeskTicketMetric[] = [],
+  metricEvents:
+    ZendeskMetricEvent[] = [],
 ): ManagerAlert[] {
   const alerts: ManagerAlert[] = [];
 
-  const priorityTickets = tickets.filter((ticket) =>
-    ['urgent', 'high'].includes(
-      String(ticket.priority || '').toLowerCase(),
-    ),
+  const byMetric = new Map(
+    metrics.map((item) => [
+      item.ticket_id,
+      item,
+    ]),
   );
 
-  if (priorityTickets.length) {
+  const ticketMap = new Map(
+    tickets.map((ticket) => [
+      ticket.id,
+      ticket,
+    ]),
+  );
+
+  const breachIds = [
+    ...new Set(
+      metricEvents
+        .filter(
+          (event) =>
+            event.type ===
+              'breach' &&
+            event.ticket_id,
+        )
+        .map(
+          (event) =>
+            event.ticket_id,
+        ),
+    ),
+  ];
+
+  if (breachIds.length) {
     alerts.push({
-      id: 'priority',
-      kind: 'priority',
+      id: 'sla-breach',
+      kind: 'sla_breach',
       severity: 'critical',
-      title: 'High priority queue',
-      message: `${priorityTickets.length} high/urgent ticket${priorityTickets.length === 1 ? '' : 's'} need manager visibility.`,
-      count: priorityTickets.length,
-      ticketIds: priorityTickets.map((t) => t.id),
+      title: 'Zendesk SLA breached',
+      message: `${breachIds.length} ticket${
+        breachIds.length === 1
+          ? ''
+          : 's'
+      } have an actual Zendesk SLA breach event.`,
+      count: breachIds.length,
+      ticketIds: breachIds,
     });
   }
 
-  const unassigned = tickets.filter(
-    (ticket) => isActive(ticket) && !ticket.assignee_id,
+  const noReply = tickets.filter(
+    (ticket) => {
+      if (!active(ticket)) {
+        return false;
+      }
+
+      const metric =
+        byMetric.get(ticket.id);
+
+      return (
+        metric &&
+        (metric.replies || 0) === 0 &&
+        ageHours(
+          ticket.created_at,
+        ) >= 2
+      );
+    },
   );
+
+  if (noReply.length) {
+    alerts.push({
+      id: 'no-first-reply-2h',
+      kind: 'no_first_reply',
+      severity: 'critical',
+      title: 'No first reply > 2 hours',
+      message: `${noReply.length} active ticket${
+        noReply.length === 1
+          ? ''
+          : 's'
+      } have no public agent reply after 2 hours.`,
+      count: noReply.length,
+      ticketIds: noReply.map(
+        (ticket) => ticket.id,
+      ),
+    });
+  }
+
+  const slowReplyIds =
+    metrics
+      .filter(
+        (metric) =>
+          Number(
+            metric
+              .reply_time_in_minutes
+              ?.calendar || 0,
+          ) > 120,
+      )
+      .map(
+        (metric) =>
+          metric.ticket_id,
+      )
+      .filter((id) =>
+        ticketMap.has(id),
+      );
+
+  if (slowReplyIds.length) {
+    alerts.push({
+      id: 'slow-first-reply',
+      kind: 'slow_first_reply',
+      severity: 'warning',
+      title: 'First reply exceeded 2 hours',
+      message: `${slowReplyIds.length} ticket${
+        slowReplyIds.length === 1
+          ? ''
+          : 's'
+      } had a first reply time above 120 minutes.`,
+      count: slowReplyIds.length,
+      ticketIds: slowReplyIds,
+    });
+  }
+
+  const unsolved72 =
+    tickets.filter(
+      (ticket) =>
+        active(ticket) &&
+        ageHours(
+          ticket.created_at,
+        ) >= 72,
+    );
+
+  if (unsolved72.length) {
+    alerts.push({
+      id: 'unsolved-72h',
+      kind: 'unsolved_72h',
+      severity: 'critical',
+      title: 'Unsolved > 72 hours',
+      message: `${unsolved72.length} active ticket${
+        unsolved72.length === 1
+          ? ''
+          : 's'
+      } have remained unsolved for 72+ hours.`,
+      count: unsolved72.length,
+      ticketIds: unsolved72.map(
+        (ticket) => ticket.id,
+      ),
+    });
+  }
+
+  const unsolved24 =
+    tickets.filter((ticket) => {
+      const age =
+        ageHours(
+          ticket.created_at,
+        );
+
+      return (
+        active(ticket) &&
+        age >= 24 &&
+        age < 72
+      );
+    });
+
+  if (unsolved24.length) {
+    alerts.push({
+      id: 'unsolved-24h',
+      kind: 'unsolved_24h',
+      severity: 'warning',
+      title: 'Unsolved > 24 hours',
+      message: `${unsolved24.length} active ticket${
+        unsolved24.length === 1
+          ? ''
+          : 's'
+      } have remained unsolved for 24+ hours.`,
+      count: unsolved24.length,
+      ticketIds: unsolved24.map(
+        (ticket) => ticket.id,
+      ),
+    });
+  }
+
+  const stale = tickets.filter(
+    (ticket) =>
+      active(ticket) &&
+      ageHours(
+        ticket.updated_at ||
+          ticket.created_at,
+      ) >= 24,
+  );
+
+  if (stale.length) {
+    alerts.push({
+      id: 'stale-24h',
+      kind: 'stale',
+      severity: 'warning',
+      title: 'No ticket activity > 24 hours',
+      message: `${stale.length} active ticket${
+        stale.length === 1
+          ? ''
+          : 's'
+      } have had no update for 24+ hours.`,
+      count: stale.length,
+      ticketIds: stale.map(
+        (ticket) => ticket.id,
+      ),
+    });
+  }
+
+  const reopenedIds =
+    metrics
+      .filter(
+        (metric) =>
+          Number(
+            metric.reopens || 0,
+          ) > 0,
+      )
+      .map(
+        (metric) =>
+          metric.ticket_id,
+      )
+      .filter((id) =>
+        ticketMap.has(id),
+      );
+
+  if (reopenedIds.length) {
+    alerts.push({
+      id: 'reopened',
+      kind: 'reopened',
+      severity: 'warning',
+      title: 'Reopened tickets',
+      message: `${reopenedIds.length} ticket${
+        reopenedIds.length === 1
+          ? ''
+          : 's'
+      } were reopened at least once.`,
+      count: reopenedIds.length,
+      ticketIds: reopenedIds,
+    });
+  }
+
+  const priority =
+    tickets.filter((ticket) =>
+      [
+        'high',
+        'urgent',
+      ].includes(
+        String(
+          ticket.priority || '',
+        ).toLowerCase(),
+      ),
+    );
+
+  if (priority.length) {
+    alerts.push({
+      id: 'priority',
+      kind: 'priority',
+      severity: 'warning',
+      title: 'High priority queue',
+      message: `${priority.length} high/urgent ticket${
+        priority.length === 1
+          ? ''
+          : 's'
+      } need manager visibility.`,
+      count: priority.length,
+      ticketIds: priority.map(
+        (ticket) => ticket.id,
+      ),
+    });
+  }
+
+  const unassigned =
+    tickets.filter(
+      (ticket) =>
+        active(ticket) &&
+        !ticket.assignee_id,
+    );
 
   if (unassigned.length) {
     alerts.push({
       id: 'unassigned',
       kind: 'unassigned',
       severity: 'warning',
-      title: 'Unassigned active tickets',
-      message: `${unassigned.length} active ticket${unassigned.length === 1 ? '' : 's'} currently have no assignee.`,
+      title: 'Active unassigned tickets',
+      message: `${unassigned.length} active ticket${
+        unassigned.length === 1
+          ? ''
+          : 's'
+      } do not have an assignee.`,
       count: unassigned.length,
-      ticketIds: unassigned.map((t) => t.id),
+      ticketIds: unassigned.map(
+        (ticket) => ticket.id,
+      ),
     });
   }
 
-  const staleLimit = Date.now() - 24 * 60 * 60 * 1000;
-  const stale = tickets.filter(
-    (ticket) =>
-      isActive(ticket) &&
-      updatedMs(ticket) > 0 &&
-      updatedMs(ticket) < staleLimit,
-  );
-
-  if (stale.length) {
-    alerts.push({
-      id: 'stale',
-      kind: 'stale',
-      severity: 'warning',
-      title: 'No recent activity',
-      message: `${stale.length} active ticket${stale.length === 1 ? '' : 's'} have not changed for more than 24 hours.`,
-      count: stale.length,
-      ticketIds: stale.map((t) => t.id),
-    });
-  }
-
-  const badRatings = ratings.filter(
-    (rating) =>
-      String(rating.score || '').toLowerCase() === 'bad',
-  );
+  const badRatings =
+    ratings.filter(
+      (rating) =>
+        String(
+          rating.score || '',
+        ).toLowerCase() ===
+        'bad',
+    );
 
   if (badRatings.length) {
     alerts.push({
@@ -115,144 +390,95 @@ export function buildManagerAlerts(
       kind: 'bad_csat',
       severity: 'critical',
       title: 'Bad customer feedback',
-      message: `${badRatings.length} bad satisfaction rating${badRatings.length === 1 ? '' : 's'} in the current 30-day window.`,
+      message: `${badRatings.length} bad CSAT rating${
+        badRatings.length === 1
+          ? ''
+          : 's'
+      } were recorded in the selected period.`,
       count: badRatings.length,
       ticketIds: badRatings
-        .map((rating) => rating.ticket_id)
-        .filter((id): id is number => Boolean(id)),
+        .map((rating) =>
+          Number(
+            rating.ticket_id,
+          ),
+        )
+        .filter(Number.isFinite),
     });
   }
 
-  const devices = buildDeviceHealth(tickets, fields, forms)
-    .filter(
-      (row) =>
-        row.last7Days >= 3 &&
-        row.trendPct !== null &&
-        row.trendPct >= 50,
+  const devices =
+    buildDeviceHealth(
+      tickets,
+      fields,
+      forms,
     )
-    .slice(0, 5);
+      .filter(
+        (row) =>
+          row.last7Days >= 3 &&
+          (row.trendPct || 0) >=
+            50,
+      )
+      .slice(0, 5);
 
   for (const row of devices) {
+    const ids = tickets
+      .filter((ticket) => {
+        // lazy device matching through
+        // device-health isn't exported
+        // here; use product text as a
+        // fallback for aggregate alert.
+        return [
+          ticket.subject || '',
+          ticket.description || '',
+          ...(ticket.tags || []),
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(
+            row.device.toLowerCase(),
+          );
+      })
+      .map(
+        (ticket) => ticket.id,
+      );
+
     alerts.push({
-      id: `device-${row.device}`,
+      id: `device-spike:${encodeURIComponent(
+        row.device,
+      )}`,
       kind: 'device_spike',
-      severity: row.trendPct && row.trendPct >= 100 ? 'critical' : 'warning',
-      title: 'Device support spike',
-      message: `${row.device} is up ${row.trendPct ?? 0}% vs the previous 7 days.`,
+      severity: 'info',
+      title: 'Product support spike',
+      message: `${row.device} has ${row.last7Days} cases in the last 7 days (${row.trendPct}% vs previous 7 days).`,
       count: row.last7Days,
-      ticketIds: [],
+      ticketIds: ids,
       entityLabel: row.device,
     });
   }
 
-  const regions = buildBreakdown(
-    tickets,
-    fields,
-    forms,
-    'region',
-  )
-    .filter((row) => row.count >= 10)
-    .slice(0, 3);
+  return alerts.sort((a, b) => {
+    const order = {
+      critical: 0,
+      warning: 1,
+      info: 2,
+    };
 
-  for (const row of regions) {
-    alerts.push({
-      id: `region-${row.label}`,
-      kind: 'region_spike',
-      severity: 'info',
-      title: 'Region volume concentration',
-      message: `${row.label} currently represents ${row.count} tickets in the 30-day window.`,
-      count: row.count,
-      ticketIds: [],
-      entityLabel: row.label,
-    });
-  }
-
-  const formsRows = buildBreakdown(
-    tickets,
-    fields,
-    forms,
-    'form',
-  )
-    .filter((row) => row.count >= 10)
-    .slice(0, 3);
-
-  for (const row of formsRows) {
-    alerts.push({
-      id: `form-${row.label}`,
-      kind: 'form_spike',
-      severity: 'info',
-      title: 'Form volume concentration',
-      message: `${row.label} currently has ${row.count} tickets in the 30-day window.`,
-      count: row.count,
-      ticketIds: [],
-      entityLabel: row.label,
-    });
-  }
-
-  const severityRank = {
-    critical: 3,
-    warning: 2,
-    info: 1,
-  };
-
-  return alerts.sort(
-    (a, b) =>
-      severityRank[b.severity] - severityRank[a.severity] ||
-      b.count - a.count,
-  );
+    return (
+      order[a.severity] -
+      order[b.severity]
+    );
+  });
 }
 
 export function ticketsForAlert(
   alert: ManagerAlert,
   tickets: ZendeskTicket[],
-  ratings: ZendeskSatisfactionRating[],
-  fields: ZendeskTicketField[],
-  forms: ZendeskForm[],
 ) {
-  if (alert.ticketIds.length) {
-    const ids = new Set(alert.ticketIds);
-    return tickets.filter((ticket) => ids.has(ticket.id));
-  }
+  const ids =
+    new Set(alert.ticketIds);
 
-  if (
-    alert.kind === 'device_spike' &&
-    alert.entityLabel
-  ) {
-    return tickets.filter((ticket) => {
-      const row = buildDeviceHealth(
-        [ticket],
-        fields,
-        forms,
-      )[0];
-      return (
-        row?.device.toLowerCase() ===
-        alert.entityLabel?.toLowerCase()
-      );
-    });
-  }
-
-  if (
-    (alert.kind === 'region_spike' ||
-      alert.kind === 'form_spike') &&
-    alert.entityLabel
-  ) {
-    const dimension =
-      alert.kind === 'region_spike' ? 'region' : 'form';
-
-    const label = alert.entityLabel.toLowerCase();
-
-    return tickets.filter((ticket) => {
-      const rows = buildBreakdown(
-        [ticket],
-        fields,
-        forms,
-        dimension,
-      );
-      return rows.some(
-        (row) => row.label.toLowerCase() === label,
-      );
-    });
-  }
-
-  return [];
+  return tickets.filter(
+    (ticket) =>
+      ids.has(ticket.id),
+  );
 }

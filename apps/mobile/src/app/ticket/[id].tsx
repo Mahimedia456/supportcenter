@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -13,7 +13,9 @@ import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
+import { zendeskCommentText } from '@/lib/zendesk-comment-text';
 import { readableDate, statusLabel } from '@/types/zendesk-ui';
+import { metadataMaps, ticketCustomFieldRows, ticketMetaLabels } from '@/lib/zendesk-metadata';
 
 function DetailRow({
   label,
@@ -36,6 +38,10 @@ export default function TicketDetailScreen() {
 
   const ticketId = Number(params.id);
   const [data, setData] = useState<api.ZendeskTicketDetail | null>(null);
+  const [agents, setAgents] = useState<api.ZendeskUser[]>([]);
+  const [groups, setGroups] = useState<api.ZendeskGroup[]>([]);
+  const [forms, setForms] = useState<api.ZendeskForm[]>([]);
+  const [fields, setFields] = useState<api.ZendeskTicketField[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +64,8 @@ export default function TicketDetailScreen() {
     }
 
     try {
-      setData(await api.zendeskTicket(accessToken, ticketId));
+      const [ticketResult, agentResult, groupResult, formResult, fieldResult] = await Promise.all([api.zendeskTicket(accessToken, ticketId), api.zendeskAgents(accessToken), api.zendeskGroups(accessToken), api.zendeskForms(accessToken), api.zendeskFields(accessToken)]);
+      setData(ticketResult); setAgents(agentResult.users || []); setGroups(groupResult.groups || []); setForms(formResult.ticket_forms || []); setFields(fieldResult.ticket_fields || []);
     } catch (e: any) {
       setError(e?.message || 'Unable to load ticket.');
     } finally {
@@ -78,6 +85,9 @@ export default function TicketDetailScreen() {
 
   const ticket = data?.ticket;
   const comments = data?.comments || [];
+  const meta = useMemo(() => ticket ? ticketMetaLabels(ticket,{agents,groups,forms}) : null,[ticket,agents,groups,forms]);
+  const maps = useMemo(() => metadataMaps({agents,groups,forms}),[agents,groups,forms]);
+  const customRows = useMemo(() => ticket ? ticketCustomFieldRows(ticket,fields) : [],[ticket,fields]);
 
   return (
     <ScrollView
@@ -139,12 +149,24 @@ export default function TicketDetailScreen() {
             <DetailRow label="Priority" value={ticket.priority || 'normal'} />
             <DetailRow label="Type" value={ticket.type} />
             <DetailRow label="Requester ID" value={ticket.requester_id} />
-            <DetailRow label="Assignee ID" value={ticket.assignee_id} />
-            <DetailRow label="Group ID" value={ticket.group_id} />
-            <DetailRow label="Form ID" value={ticket.ticket_form_id} />
+            <DetailRow label="Assignee" value={meta?.assignee} />
+            <DetailRow label="Group" value={meta?.group} />
+            <DetailRow label="Form" value={meta?.form} />
             <DetailRow label="Created" value={readableDate(ticket.created_at)} />
             <DetailRow label="Updated" value={readableDate(ticket.updated_at)} />
           </AppCard>
+
+
+          {customRows.length ? (
+            <>
+              <Text style={s.sectionTitle}>Custom fields</Text>
+              <AppCard>
+                {customRows.map((row) => (
+                  <DetailRow key={row.id} label={row.title} value={row.value} />
+                ))}
+              </AppCard>
+            </>
+          ) : null}
 
           {ticket.tags?.length ? (
             <>
@@ -168,7 +190,7 @@ export default function TicketDetailScreen() {
             <AppCard key={comment.id} style={s.comment}>
               <View style={s.commentHeader}>
                 <Text style={s.author}>
-                  Author #{comment.author_id ?? '—'}
+                  {comment.author_id ? (maps.agents.get(comment.author_id) || `Zendesk user #${comment.author_id}`) : 'Zendesk user'}
                 </Text>
                 <Text
                   style={[
@@ -185,7 +207,7 @@ export default function TicketDetailScreen() {
               </Text>
 
               <Text selectable style={s.commentBody}>
-                {comment.plain_body || comment.body || 'No text'}
+                {zendeskCommentText(comment.plain_body || comment.body)}
               </Text>
             </AppCard>
           ))}

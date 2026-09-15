@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -17,6 +17,7 @@ import {
   router,
   type Href,
 } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
@@ -27,74 +28,185 @@ import {
   type ManagerAlert,
 } from '@/lib/alerts';
 
-type AlertFilter =
+type Filter =
   | 'all'
   | 'critical'
   | 'warning'
   | 'info';
 
 const FILTERS: Array<{
-  key: AlertFilter;
+  key: Filter;
   label: string;
 }> = [
   { key: 'all', label: 'All' },
-  { key: 'critical', label: 'Critical' },
-  { key: 'warning', label: 'Warning' },
+  {
+    key: 'critical',
+    label: 'Critical',
+  },
+  {
+    key: 'warning',
+    label: 'Warning',
+  },
   { key: 'info', label: 'Info' },
 ];
 
 export default function Alerts() {
-  const { session, ensureFreshSession } = useAuth();
+  const {
+    session,
+    ensureFreshSession,
+  } = useAuth();
 
   const [tickets, setTickets] =
     useState<api.ZendeskTicket[]>([]);
   const [ratings, setRatings] =
-    useState<api.ZendeskSatisfactionRating[]>([]);
+    useState<
+      api.ZendeskSatisfactionRating[]
+    >([]);
   const [forms, setForms] =
     useState<api.ZendeskForm[]>([]);
   const [fields, setFields] =
-    useState<api.ZendeskTicketField[]>([]);
+    useState<
+      api.ZendeskTicketField[]
+    >([]);
+  const [metrics, setMetrics] =
+    useState<
+      api.ZendeskTicketMetric[]
+    >([]);
+  const [events, setEvents] =
+    useState<
+      api.ZendeskMetricEvent[]
+    >([]);
+
+  const [
+    slaEventsAvailable,
+    setSlaEventsAvailable,
+  ] = useState(true);
+
   const [filter, setFilter] =
-    useState<AlertFilter>('all');
+    useState<Filter>('all');
+  const [loading, setLoading] =
+    useState(true);
   const [refreshing, setRefreshing] =
     useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
 
-    const fresh = await ensureFreshSession();
+    const fresh =
+      await ensureFreshSession();
     const token =
-      fresh?.accessToken || session?.accessToken;
+      fresh?.accessToken ||
+      session?.accessToken;
 
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
+      const ticketResult =
+        await api.zendeskAnalyticsTickets(
+          token,
+          90,
+        );
+
+      setTickets(
+        ticketResult.tickets || [],
+      );
+
+      const results =
+        await Promise.allSettled([
+          api.zendeskSatisfaction(
+            token,
+            90,
+          ),
+          api.zendeskForms(token),
+          api.zendeskFields(token),
+          api.zendeskTicketMetrics(
+            token,
+            90,
+          ),
+          api.zendeskMetricEvents(
+            token,
+            30,
+          ),
+        ]);
+
       const [
-        ticketResult,
-        ratingResult,
+        satisfaction,
         formResult,
         fieldResult,
-      ] = await Promise.all([
-        api.zendeskAnalyticsTickets(token, 30),
-        api.zendeskSatisfaction(token, 30),
-        api.zendeskForms(token),
-        api.zendeskFields(token),
-      ]);
+        metricResult,
+        eventResult,
+      ] = results;
 
-      setTickets(ticketResult.tickets || []);
-      setRatings(ratingResult.ratings || []);
-      setForms(formResult.ticket_forms || []);
-      setFields(fieldResult.ticket_fields || []);
+      if (
+        satisfaction.status ===
+        'fulfilled'
+      ) {
+        setRatings(
+          satisfaction.value
+            .ratings || [],
+        );
+      }
+
+      if (
+        formResult.status ===
+        'fulfilled'
+      ) {
+        setForms(
+          formResult.value
+            .ticket_forms || [],
+        );
+      }
+
+      if (
+        fieldResult.status ===
+        'fulfilled'
+      ) {
+        setFields(
+          fieldResult.value
+            .ticket_fields || [],
+        );
+      }
+
+      if (
+        metricResult.status ===
+        'fulfilled'
+      ) {
+        setMetrics(
+          metricResult.value
+            .metrics || [],
+        );
+      }
+
+      if (
+        eventResult.status ===
+        'fulfilled'
+      ) {
+        setEvents(
+          eventResult.value.events ||
+            [],
+        );
+        setSlaEventsAvailable(
+          eventResult.value.available,
+        );
+      } else {
+        setSlaEventsAvailable(false);
+      }
     } catch (e: any) {
       setError(
-        e?.message || 'Unable to load manager alerts.',
+        e?.message ||
+          'Unable to load alert data.',
       );
     } finally {
       setLoading(false);
     }
-  }, [ensureFreshSession, session?.accessToken]);
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     void load();
@@ -113,8 +225,17 @@ export default function Alerts() {
         ratings,
         fields,
         forms,
+        metrics,
+        events,
       ),
-    [fields, forms, ratings, tickets],
+    [
+      events,
+      fields,
+      forms,
+      metrics,
+      ratings,
+      tickets,
+    ],
   );
 
   const filtered = useMemo(
@@ -122,7 +243,9 @@ export default function Alerts() {
       filter === 'all'
         ? alerts
         : alerts.filter(
-            (alert) => alert.severity === filter,
+            (alert) =>
+              alert.severity ===
+              filter,
           ),
     [alerts, filter],
   );
@@ -130,19 +253,27 @@ export default function Alerts() {
   const counts = useMemo(
     () => ({
       critical: alerts.filter(
-        (a) => a.severity === 'critical',
+        (alert) =>
+          alert.severity ===
+          'critical',
       ).length,
       warning: alerts.filter(
-        (a) => a.severity === 'warning',
+        (alert) =>
+          alert.severity ===
+          'warning',
       ).length,
       info: alerts.filter(
-        (a) => a.severity === 'info',
+        (alert) =>
+          alert.severity ===
+          'info',
       ).length,
     }),
     [alerts],
   );
 
-  function openAlert(alert: ManagerAlert) {
+  function openAlert(
+    alert: ManagerAlert,
+  ) {
     router.push({
       pathname: '/alert/[id]',
       params: { id: alert.id },
@@ -164,21 +295,46 @@ export default function Alerts() {
       <WorkspaceHeader />
 
       <View style={s.hero}>
-        <View>
+        <View style={s.heroCopy}>
           <Text style={s.eyebrow}>
-            MANAGER NOTIFICATION CENTER
+            ZENDESK OPERATIONS
           </Text>
-          <Text style={s.title}>Alerts</Text>
+          <Text style={s.title}>
+            Alerts
+          </Text>
           <Text style={s.caption}>
-            Operational signals from live Zendesk data
+            Reply time, unsolved age,
+            stale activity and SLA signals
           </Text>
         </View>
 
         <View style={s.live}>
           <View style={s.liveDot} />
-          <Text style={s.liveText}>LIVE</Text>
+          <Text style={s.liveText}>
+            LIVE
+          </Text>
         </View>
       </View>
+
+      {!slaEventsAvailable ? (
+        <AppCard style={s.notice}>
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color={colors.warning}
+          />
+          <View style={s.noticeCopy}>
+            <Text style={s.noticeTitle}>
+              SLA event access unavailable
+            </Text>
+            <Text style={s.noticeText}>
+              Ticket metric alerts still
+              work. Exact SLA breach events
+              require a Zendesk admin user.
+            </Text>
+          </View>
+        </AppCard>
+      ) : null}
 
       <View style={s.summaryRow}>
         <Summary
@@ -200,16 +356,21 @@ export default function Alerts() {
 
       <ScrollView
         horizontal
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator={
+          false
+        }
         contentContainerStyle={s.filters}
       >
         {FILTERS.map((item) => (
           <Pressable
             key={item.key}
-            onPress={() => setFilter(item.key)}
+            onPress={() =>
+              setFilter(item.key)
+            }
             style={[
               s.filter,
-              filter === item.key && s.filterActive,
+              filter === item.key &&
+                s.filterActive,
             ]}
           >
             <Text
@@ -230,15 +391,19 @@ export default function Alerts() {
           <Text style={s.errorTitle}>
             Alerts unavailable
           </Text>
-          <Text style={s.errorText}>{error}</Text>
+          <Text style={s.errorText}>
+            {error}
+          </Text>
         </AppCard>
       ) : null}
 
       {loading ? (
         <View style={s.loading}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator
+            color={colors.primary}
+          />
           <Text style={s.loadingText}>
-            Evaluating manager alert rulesâ€¦
+            Evaluating Zendesk metrics…
           </Text>
         </View>
       ) : (
@@ -247,39 +412,38 @@ export default function Alerts() {
             <Text style={s.sectionTitle}>
               Active signals
             </Text>
-            <Text style={s.count}>{filtered.length}</Text>
+            <Text style={s.count}>
+              {filtered.length}
+            </Text>
           </View>
 
           {filtered.map((alert) => (
             <AlertCard
               key={alert.id}
               alert={alert}
-              onPress={() => openAlert(alert)}
+              onPress={() =>
+                openAlert(alert)
+              }
             />
           ))}
 
-          {!filtered.length && !error ? (
+          {!filtered.length &&
+          !error ? (
             <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Text style={s.emptyIconText}>âœ“</Text>
-              </View>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={42}
+                color={colors.primary}
+              />
               <Text style={s.emptyTitle}>
                 No alerts in this filter
               </Text>
               <Text style={s.emptyText}>
-                Pull down to evaluate the latest Zendesk data.
+                Pull down to re-evaluate
+                Zendesk metrics.
               </Text>
             </View>
           ) : null}
-
-          <View style={s.note}>
-            <Text style={s.noteTitle}>
-              SLA / no-response foundation
-            </Text>
-            <Text style={s.noteText}>
-              Until Zendesk SLA policy/event metrics are wired, the â€œNo recent activityâ€ rule uses active tickets with no update for 24+ hours. Phase 13 system health will expose exact sync/connection state; a later backend alert worker can make these signals persistent and push-driven.
-            </Text>
-          </View>
         </>
       )}
     </ScrollView>
@@ -293,7 +457,10 @@ function Summary({
 }: {
   label: string;
   value: number;
-  tone: 'critical' | 'warning' | 'info';
+  tone:
+    | 'critical'
+    | 'warning'
+    | 'info';
 }) {
   const bg =
     tone === 'critical'
@@ -310,11 +477,23 @@ function Summary({
         : colors.cyan;
 
   return (
-    <View style={[s.summary, { backgroundColor: bg }]}>
-      <Text style={[s.summaryValue, { color: fg }]}>
+    <View
+      style={[
+        s.summary,
+        { backgroundColor: bg },
+      ]}
+    >
+      <Text
+        style={[
+          s.summaryValue,
+          { color: fg },
+        ]}
+      >
         {value}
       </Text>
-      <Text style={s.summaryLabel}>{label}</Text>
+      <Text style={s.summaryLabel}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -327,18 +506,25 @@ function AlertCard({
   onPress: () => void;
 }) {
   const accent =
-    alert.severity === 'critical'
+    alert.severity ===
+    'critical'
       ? colors.danger
-      : alert.severity === 'warning'
+      : alert.severity ===
+          'warning'
         ? colors.warning
         : colors.cyan;
 
   return (
-    <Pressable onPress={onPress} style={s.alertCard}>
+    <Pressable
+      onPress={onPress}
+      style={s.alertCard}
+    >
       <View
         style={[
           s.alertIndicator,
-          { backgroundColor: accent },
+          {
+            backgroundColor: accent,
+          },
         ]}
       />
 
@@ -347,7 +533,12 @@ function AlertCard({
           <Text style={s.alertTitle}>
             {alert.title}
           </Text>
-          <Text style={[s.severity, { color: accent }]}>
+          <Text
+            style={[
+              s.severity,
+              { color: accent },
+            ]}
+          >
             {alert.severity.toUpperCase()}
           </Text>
         </View>
@@ -358,10 +549,14 @@ function AlertCard({
 
         <View style={s.alertFooter}>
           <Text style={s.alertCount}>
-            {alert.count} signal
-            {alert.count === 1 ? '' : 's'}
+            {alert.count} ticket
+            {alert.count === 1
+              ? ''
+              : 's'}
           </Text>
-          <Text style={s.open}>View details â€º</Text>
+          <Text style={s.open}>
+            View tickets ›
+          </Text>
         </View>
       </View>
     </Pressable>
@@ -374,30 +569,35 @@ const s = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingTop: 8,
     paddingBottom: 120,
   },
   hero: {
-    marginTop: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  heroCopy: {
+    flex: 1,
   },
   eyebrow: {
     color: colors.primary,
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
   },
   title: {
     color: colors.text,
-    fontSize: 30,
+    fontSize: 29,
     fontWeight: '900',
-    marginTop: 4,
+    marginTop: 5,
   },
   caption: {
     color: colors.muted,
     fontSize: 11,
-    marginTop: 4,
+    lineHeight: 16,
+    marginTop: 5,
   },
   live: {
     alignSelf: 'flex-start',
@@ -407,7 +607,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.primarySoft,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 8,
   },
   liveDot: {
     width: 7,
@@ -420,21 +620,41 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
   },
+  notice: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: '#FFF9EC',
+  },
+  noticeCopy: {
+    flex: 1,
+  },
+  noticeTitle: {
+    color: colors.warning,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  noticeText: {
+    color: colors.muted,
+    fontSize: 9,
+    lineHeight: 14,
+    marginTop: 3,
+  },
   summaryRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 18,
+    marginTop: 14,
   },
   summary: {
     flex: 1,
-    minHeight: 93,
-    borderRadius: 17,
+    minHeight: 86,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 13,
+    padding: 12,
   },
   summaryValue: {
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: '900',
   },
   summaryLabel: {
@@ -465,7 +685,7 @@ const s = StyleSheet.create({
     fontWeight: '800',
   },
   filterTextActive: {
-    color: '#fff',
+    color: '#FFFFFF',
   },
   errorTitle: {
     color: colors.danger,
@@ -473,7 +693,7 @@ const s = StyleSheet.create({
   },
   errorText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 5,
   },
   loading: {
@@ -482,7 +702,7 @@ const s = StyleSheet.create({
   },
   loadingText: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 10,
   },
   sectionRow: {
@@ -509,7 +729,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 19,
+    borderRadius: 18,
     flexDirection: 'row',
     overflow: 'hidden',
     marginBottom: 10,
@@ -564,19 +784,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 50,
   },
-  emptyIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyIconText: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: '900',
-  },
   emptyTitle: {
     color: colors.text,
     fontWeight: '900',
@@ -584,26 +791,7 @@ const s = StyleSheet.create({
   },
   emptyText: {
     color: colors.muted,
-    fontSize: 11,
-    marginTop: 5,
-    textAlign: 'center',
-  },
-  note: {
-    marginTop: 16,
-    backgroundColor: colors.primarySoft,
-    borderRadius: 16,
-    padding: 16,
-  },
-  noteTitle: {
-    color: colors.primary,
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  noteText: {
-    color: colors.muted,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 10,
     marginTop: 5,
   },
 });
-

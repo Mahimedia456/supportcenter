@@ -1,41 +1,170 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { WorkspaceLogo } from '@/components/WorkspaceLogo';
 import { colors } from '@/constants/theme';
 
-export function WorkspaceHeader() {
+export function WorkspaceHeader({
+  safeTop = true,
+}: {
+  safeTop?: boolean;
+}) {
   const { session } = useAuth();
+  const insets = useSafeAreaInsets();
+
   if (!session) return null;
 
   return (
-    <View style={styles.row}>
-      <View style={styles.brand}>
-        <WorkspaceLogo workspace={session.workspace.slug} size={38} />
-        <View>
-          <Text style={styles.name}>{session.workspace.supportLabel}</Text>
-          <View style={styles.liveRow}>
-            <View style={styles.dot} />
-            <Text style={styles.live}>Connected workspace</Text>
+    <View
+      style={[
+        s.shell,
+        safeTop && {
+          paddingTop: Math.max(insets.top, 8),
+        },
+      ]}
+    >
+      <View style={s.row}>
+        <View style={s.brand}>
+          <View style={s.logoWrap}>
+            <WorkspaceLogo
+              workspace={session.workspace.slug}
+              size={35}
+            />
+          </View>
+
+          <View style={s.copy}>
+            <Text
+              style={s.name}
+              numberOfLines={1}
+            >
+              {session.workspace.supportLabel}
+            </Text>
+
+            <View style={s.connectedRow}>
+              <View style={s.dot} />
+              <Text style={s.connected}>
+                Connected workspace
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>
-          {session.user.displayName.slice(0, 2).toUpperCase()}
-        </Text>
+
+        <Pressable
+          onPress={() => router.push('/profile')}
+          style={({ pressed }) => [
+            s.avatar,
+            pressed && s.avatarPressed,
+          ]}
+        >
+          <Text style={s.avatarText}>
+            {session.user.displayName
+              .slice(0, 2)
+              .toUpperCase()}
+          </Text>
+
+          <View style={s.avatarBadge}>
+            <Ionicons
+              name="checkmark"
+              size={9}
+              color="#FFFFFF"
+            />
+          </View>
+        </Pressable>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  name: { color: colors.text, fontWeight: '800', fontSize: 17 },
-  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#22C55E' },
-  live: { color: colors.muted, fontSize: 12 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#DDF7F0', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.primary, fontWeight: '800' },
+const s = StyleSheet.create({
+  shell: {
+    paddingBottom: 14,
+  },
+  row: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brand: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginRight: 12,
+  },
+  logoWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copy: {
+    flex: 1,
+  },
+  name: {
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: 17,
+    letterSpacing: -0.2,
+  },
+  connectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.lime,
+  },
+  connected: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: '#CFE9DD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarPressed: {
+    opacity: 0.76,
+  },
+  avatarText: {
+    color: colors.primary,
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

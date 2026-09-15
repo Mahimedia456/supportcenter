@@ -40,6 +40,9 @@ export default function Tickets() {
   const [mode, setMode] = useState<SourceMode>('zendesk');
   const [views, setViews] = useState<api.ZendeskView[]>([]);
   const [tickets, setTickets] = useState<api.ZendeskTicket[]>([]);
+  const [agents, setAgents] = useState<api.ZendeskUser[]>([]);
+  const [groups, setGroups] = useState<api.ZendeskGroup[]>([]);
+  const [forms, setForms] = useState<api.ZendeskForm[]>([]);
   const [selectedView, setSelectedView] = useState<number | null>(null);
   const [managerView, setManagerView] = useState<ManagerViewKey>('attention');
   const [sort, setSort] = useState<TicketSortKey>('updated_desc');
@@ -61,8 +64,11 @@ export default function Tickets() {
       if (!accessToken) return;
 
       try {
-        const healthResult = await api.zendeskHealth(accessToken);
+        const [healthResult, agentResult, groupResult, formResult] = await Promise.all([api.zendeskHealth(accessToken), api.zendeskAgents(accessToken), api.zendeskGroups(accessToken), api.zendeskForms(accessToken)]);
         setHealth(healthResult);
+        setAgents(agentResult.users || []);
+        setGroups(groupResult.groups || []);
+        setForms(formResult.ticket_forms || []);
 
         if (targetMode === 'zendesk') {
           const viewResult = await api.zendeskViews(accessToken);
@@ -297,6 +303,9 @@ export default function Tickets() {
           <TicketCard
             key={ticket.id}
             ticket={ticket}
+            agents={agents}
+            groups={groups}
+            forms={forms}
             onPress={() => openTicket(ticket.id)}
           />
         ))}

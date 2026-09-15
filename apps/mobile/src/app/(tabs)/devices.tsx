@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -14,70 +14,147 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  router,
+  type Href,
+} from 'expo-router';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { AppCard } from '@/components/AppCard';
 import { DeviceHealthCard } from '@/components/devices/DeviceHealthCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
-import { buildDeviceHealth } from '@/lib/device-health';
+import {
+  buildDeviceHealth,
+} from '@/lib/device-health';
+import {
+  detectedMapping,
+} from '@/lib/zendesk-dimensions';
 
-type Filter = 'all' | 'faulty' | 'rma' | 'rising';
+type Filter =
+  | 'all'
+  | 'with-cases'
+  | 'faulty'
+  | 'rma'
+  | 'rising';
 
 const FILTERS: Array<{
   key: Filter;
   label: string;
 }> = [
-  { key: 'all', label: 'All Devices' },
+  { key: 'all', label: 'All Products' },
+  {
+    key: 'with-cases',
+    label: 'With Tickets',
+  },
   { key: 'faulty', label: 'Faulty' },
   { key: 'rma', label: 'RMA' },
   { key: 'rising', label: 'Rising' },
 ];
 
 export default function Devices() {
-  const { session, ensureFreshSession } = useAuth();
+  const {
+    session,
+    ensureFreshSession,
+  } = useAuth();
 
   const [tickets, setTickets] =
     useState<api.ZendeskTicket[]>([]);
   const [forms, setForms] =
     useState<api.ZendeskForm[]>([]);
   const [fields, setFields] =
-    useState<api.ZendeskTicketField[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [query, setQuery] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+    useState<
+      api.ZendeskTicketField[]
+    >([]);
+
+  const [filter, setFilter] =
+    useState<Filter>('all');
+  const [query, setQuery] =
+    useState('');
+  const [refreshing, setRefreshing] =
+    useState(false);
+  const [loading, setLoading] =
+    useState(true);
   const [error, setError] = useState('');
+  const [metadataError, setMetadataError] =
+    useState('');
 
   const load = useCallback(async () => {
     setError('');
+    setMetadataError('');
 
-    const fresh = await ensureFreshSession();
+    const fresh =
+      await ensureFreshSession();
     const token =
-      fresh?.accessToken || session?.accessToken;
+      fresh?.accessToken ||
+      session?.accessToken;
 
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
-      const [ticketResult, formResult, fieldResult] =
-        await Promise.all([
-          api.zendeskAnalyticsTickets(token, 30),
-          api.zendeskForms(token),
-          api.zendeskFields(token),
-        ]);
+      const ticketResult =
+        await api.zendeskAllTickets(
+          token,
+        );
 
-      setTickets(ticketResult.tickets || []);
-      setForms(formResult.ticket_forms || []);
-      setFields(fieldResult.ticket_fields || []);
+      setTickets(
+        ticketResult.tickets || [],
+      );
+
+      const [
+        formResult,
+        fieldResult,
+      ] = await Promise.allSettled([
+        api.zendeskForms(token),
+        api.zendeskFields(token),
+      ]);
+
+      if (
+        formResult.status ===
+        'fulfilled'
+      ) {
+        setForms(
+          formResult.value
+            .ticket_forms || [],
+        );
+      }
+
+      if (
+        fieldResult.status ===
+        'fulfilled'
+      ) {
+        setFields(
+          fieldResult.value
+            .ticket_fields || [],
+        );
+      }
+
+      if (
+        formResult.status ===
+          'rejected' ||
+        fieldResult.status ===
+          'rejected'
+      ) {
+        setMetadataError(
+          'Some Zendesk product metadata could not be loaded.',
+        );
+      }
     } catch (e: any) {
       setError(
-        e?.message || 'Unable to load device health.',
+        e?.message ||
+          'Unable to load product health.',
       );
     } finally {
       setLoading(false);
     }
-  }, [ensureFreshSession, session?.accessToken]);
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     void load();
@@ -90,25 +167,53 @@ export default function Devices() {
   }
 
   const rows = useMemo(
-    () => buildDeviceHealth(tickets, fields, forms),
+    () =>
+      buildDeviceHealth(
+        tickets,
+        fields,
+        forms,
+      ),
     [fields, forms, tickets],
   );
 
+  const mapping = useMemo(
+    () => detectedMapping(fields),
+    [fields],
+  );
+
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle =
+      query.trim().toLowerCase();
 
     return rows.filter((row) => {
       if (
         needle &&
-        !row.device.toLowerCase().includes(needle)
+        !row.device
+          .toLowerCase()
+          .includes(needle)
       ) {
         return false;
       }
 
-      if (filter === 'faulty') return row.faulty > 0;
-      if (filter === 'rma') return row.rma > 0;
-      if (filter === 'rising')
-        return (row.trendPct || 0) > 0;
+      if (
+        filter === 'with-cases'
+      ) {
+        return row.total > 0;
+      }
+
+      if (filter === 'faulty') {
+        return row.faulty > 0;
+      }
+
+      if (filter === 'rma') {
+        return row.rma > 0;
+      }
+
+      if (filter === 'rising') {
+        return (
+          (row.trendPct || 0) > 0
+        );
+      }
 
       return true;
     });
@@ -116,24 +221,29 @@ export default function Devices() {
 
   const totals = useMemo(
     () => ({
-      devices: rows.length,
+      products: rows.length,
       cases: rows.reduce(
-        (sum, row) => sum + row.total,
+        (sum, row) =>
+          sum + row.total,
         0,
       ),
       faulty: rows.reduce(
-        (sum, row) => sum + row.faulty,
+        (sum, row) =>
+          sum + row.faulty,
         0,
       ),
       rma: rows.reduce(
-        (sum, row) => sum + row.rma,
+        (sum, row) =>
+          sum + row.rma,
         0,
       ),
     }),
     [rows],
   );
 
-  function openDevice(name: string) {
+  function openDevice(
+    name: string,
+  ) {
     router.push({
       pathname: '/device/[name]',
       params: { name },
@@ -156,29 +266,44 @@ export default function Devices() {
       <WorkspaceHeader />
 
       <View style={s.hero}>
-        <View>
+        <View style={s.heroCopy}>
           <Text style={s.eyebrow}>
-            30 DAY DEVICE HEALTH
+            ZENDESK PRODUCT HEALTH
           </Text>
-          <Text style={s.title}>Devices</Text>
+          <Text style={s.title}>
+            Devices
+          </Text>
           <Text style={s.caption}>
-            Which products are generating the most support load?
+            Atomos product custom fields
+            mapped to support load
           </Text>
         </View>
 
         <View style={s.live}>
           <View style={s.liveDot} />
-          <Text style={s.liveText}>LIVE</Text>
+          <Text style={s.liveText}>
+            LIVE
+          </Text>
         </View>
       </View>
 
+      <AppCard style={s.mappingCard}>
+        <Text style={s.mappingLabel}>
+          PRODUCT FIELD
+        </Text>
+        <Text style={s.mappingValue}>
+          {mapping.device?.title ||
+            'No product/device field detected'}
+        </Text>
+      </AppCard>
+
       <View style={s.summaryGrid}>
         <Summary
-          label="Devices"
-          value={totals.devices}
+          label="Products"
+          value={totals.products}
         />
         <Summary
-          label="Cases"
+          label="Tickets"
           value={totals.cases}
         />
         <Summary
@@ -189,38 +314,56 @@ export default function Devices() {
         <Summary
           label="RMA"
           value={totals.rma}
+          accent
         />
       </View>
 
-      <View style={s.search}>
-        <Text style={s.searchIcon}>âŒ•</Text>
+      <View style={s.searchWrap}>
+        <Ionicons
+          name="search-outline"
+          size={19}
+          color={colors.muted}
+        />
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search device or product..."
+          placeholder="Search product / device"
           placeholderTextColor={colors.muted}
           style={s.searchInput}
           autoCorrect={false}
         />
         {query ? (
-          <Pressable onPress={() => setQuery('')}>
-            <Text style={s.clear}>Ã—</Text>
+          <Pressable
+            onPress={() =>
+              setQuery('')
+            }
+          >
+            <Ionicons
+              name="close-circle"
+              size={19}
+              color={colors.muted}
+            />
           </Pressable>
         ) : null}
       </View>
 
       <ScrollView
         horizontal
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator={
+          false
+        }
         contentContainerStyle={s.filters}
       >
         {FILTERS.map((item) => (
           <Pressable
             key={item.key}
-            onPress={() => setFilter(item.key)}
+            onPress={() =>
+              setFilter(item.key)
+            }
             style={[
               s.filter,
-              filter === item.key && s.filterActive,
+              filter === item.key &&
+                s.filterActive,
             ]}
           >
             <Text
@@ -236,34 +379,46 @@ export default function Devices() {
         ))}
       </ScrollView>
 
+      {metadataError ? (
+        <Text style={s.metadataError}>
+          {metadataError}
+        </Text>
+      ) : null}
+
       {error ? (
-        <AppCard style={s.errorCard}>
+        <AppCard>
           <Text style={s.errorTitle}>
-            Device health unavailable
+            Product health unavailable
           </Text>
-          <Text style={s.errorText}>{error}</Text>
+          <Text style={s.errorText}>
+            {error}
+          </Text>
         </AppCard>
       ) : null}
 
       {loading ? (
         <View style={s.loading}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator
+            color={colors.primary}
+          />
           <Text style={s.loadingText}>
-            Analysing Zendesk device dataâ€¦
+            Loading Zendesk products…
           </Text>
         </View>
       ) : (
         <>
           <View style={s.sectionRow}>
             <Text style={s.sectionTitle}>
-              Device health
+              Product health
             </Text>
-            <Text style={s.count}>{filtered.length}</Text>
+            <Text style={s.count}>
+              {filtered.length}
+            </Text>
           </View>
 
           {filtered.map((row) => (
             <DeviceHealthCard
-              key={row.device.toLowerCase()}
+              key={row.device}
               row={row}
               onPress={() =>
                 openDevice(row.device)
@@ -271,28 +426,23 @@ export default function Devices() {
             />
           ))}
 
-          {!filtered.length && !error ? (
+          {!filtered.length &&
+          !error ? (
             <View style={s.empty}>
-              <View style={s.emptyIcon}>
-                <Text style={s.emptyIconText}>D</Text>
-              </View>
+              <Ionicons
+                name="hardware-chip-outline"
+                size={34}
+                color={colors.muted}
+              />
               <Text style={s.emptyTitle}>
-                No matching devices
+                No product values found
               </Text>
               <Text style={s.emptyText}>
-                Try another filter or clear the search.
+                Check the Zendesk custom
+                field mapping shown above.
               </Text>
             </View>
           ) : null}
-
-          <View style={s.note}>
-            <Text style={s.noteTitle}>
-              Faulty / RMA logic
-            </Text>
-            <Text style={s.noteText}>
-              RMA and faulty signals are detected from real Zendesk form, issue and tag values. Phase 11 will add customer feedback and agent context around these device cases.
-            </Text>
-          </View>
         </>
       )}
     </ScrollView>
@@ -313,12 +463,15 @@ function Summary({
       <Text
         style={[
           s.summaryValue,
-          accent && s.summaryValueAccent,
+          accent &&
+            s.summaryValueAccent,
         ]}
       >
         {value}
       </Text>
-      <Text style={s.summaryLabel}>{label}</Text>
+      <Text style={s.summaryLabel}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -329,31 +482,35 @@ const s = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingTop: 8,
     paddingBottom: 120,
   },
   hero: {
-    marginTop: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  heroCopy: {
+    flex: 1,
   },
   eyebrow: {
     color: colors.primary,
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
   },
   title: {
     color: colors.text,
-    fontSize: 30,
+    fontSize: 29,
     fontWeight: '900',
-    marginTop: 4,
+    marginTop: 5,
   },
   caption: {
     color: colors.muted,
     fontSize: 11,
-    marginTop: 4,
-    maxWidth: 270,
+    lineHeight: 16,
+    marginTop: 5,
   },
   live: {
     alignSelf: 'flex-start',
@@ -363,7 +520,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.primarySoft,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: 8,
   },
   liveDot: {
     width: 7,
@@ -376,19 +533,35 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
   },
+  mappingCard: {
+    marginTop: 16,
+    backgroundColor: '#F5FBF8',
+  },
+  mappingLabel: {
+    color: colors.muted,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  mappingValue: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 5,
+  },
   summaryGrid: {
     flexDirection: 'row',
     gap: 7,
-    marginTop: 18,
+    marginTop: 10,
   },
   summary: {
     flex: 1,
-    backgroundColor: colors.surface,
+    minHeight: 75,
     borderRadius: 15,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 12,
+    padding: 11,
   },
   summaryValue: {
     color: colors.text,
@@ -403,45 +576,36 @@ const s = StyleSheet.create({
     fontSize: 8,
     fontWeight: '800',
     marginTop: 4,
-    textTransform: 'uppercase',
   },
-  search: {
-    marginTop: 15,
-    backgroundColor: colors.surface,
-    borderRadius: 15,
+  searchWrap: {
+    minHeight: 52,
+    marginTop: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    minHeight: 50,
+    backgroundColor: colors.surface,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  searchIcon: {
-    color: colors.cyan,
-    fontSize: 21,
-    marginRight: 8,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
     color: colors.text,
-    fontSize: 13,
-  },
-  clear: {
-    color: colors.muted,
-    fontSize: 24,
-    paddingLeft: 8,
+    fontSize: 12,
+    fontWeight: '700',
   },
   filters: {
-    paddingVertical: 12,
     gap: 8,
+    paddingVertical: 13,
   },
   filter: {
-    backgroundColor: colors.surface,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   filterActive: {
     backgroundColor: colors.primary,
@@ -449,14 +613,16 @@ const s = StyleSheet.create({
   },
   filterText: {
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
   },
   filterTextActive: {
-    color: '#fff',
+    color: '#FFFFFF',
   },
-  errorCard: {
-    marginBottom: 12,
+  metadataError: {
+    color: colors.warning,
+    fontSize: 9,
+    marginBottom: 8,
   },
   errorTitle: {
     color: colors.danger,
@@ -464,23 +630,24 @@ const s = StyleSheet.create({
   },
   errorText: {
     color: colors.text,
+    fontSize: 11,
     marginTop: 5,
-    fontSize: 12,
   },
   loading: {
-    paddingVertical: 70,
     alignItems: 'center',
+    paddingVertical: 70,
   },
   loadingText: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 10,
   },
   sectionRow: {
-    marginTop: 5,
-    marginBottom: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 5,
+    marginBottom: 10,
   },
   sectionTitle: {
     color: colors.text,
@@ -489,28 +656,16 @@ const s = StyleSheet.create({
   },
   count: {
     color: colors.primary,
+    fontSize: 10,
+    fontWeight: '900',
     backgroundColor: colors.primarySoft,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
-    fontWeight: '900',
-    fontSize: 10,
   },
   empty: {
     alignItems: 'center',
-    paddingVertical: 50,
-  },
-  emptyIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyIconText: {
-    color: colors.primary,
-    fontWeight: '900',
+    paddingVertical: 60,
   },
   emptyTitle: {
     color: colors.text,
@@ -519,29 +674,8 @@ const s = StyleSheet.create({
   },
   emptyText: {
     color: colors.muted,
-    fontSize: 11,
-    marginTop: 5,
-  },
-  note: {
-    marginTop: 16,
-    backgroundColor: colors.primarySoft,
-    borderRadius: 16,
-    padding: 16,
-  },
-  noteTitle: {
-    color: colors.primary,
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  noteText: {
-    color: colors.muted,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 10,
+    textAlign: 'center',
     marginTop: 5,
   },
 });
-
-
-
-
-

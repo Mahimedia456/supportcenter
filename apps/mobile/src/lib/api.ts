@@ -26,22 +26,33 @@ export class ApiError extends Error {
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) =>
+    setTimeout(resolve, ms),
+  );
 }
 
-function parseRetryAfter(value: string | null) {
+function parseRetryAfter(
+  value: string | null,
+) {
   if (!value) return undefined;
 
   const seconds = Number(value);
 
   if (Number.isFinite(seconds)) {
-    return Math.max(0, seconds * 1000);
+    return Math.max(
+      0,
+      seconds * 1000,
+    );
   }
 
-  const absolute = new Date(value).getTime();
+  const absolute =
+    new Date(value).getTime();
 
   if (Number.isFinite(absolute)) {
-    return Math.max(0, absolute - Date.now());
+    return Math.max(
+      0,
+      absolute - Date.now(),
+    );
   }
 
   return undefined;
@@ -57,29 +68,34 @@ async function request<T>(
 
   while (attempt <= retries) {
     try {
-      const controller = new AbortController();
+      const controller =
+        new AbortController();
 
-      const requestTimeoutMs =
+      const timeoutMs =
         path.startsWith('/auth/')
           ? 45_000
-          : 30_000;
+          : 35_000;
 
       const timeout = setTimeout(
         () => controller.abort(),
-        requestTimeoutMs,
+        timeoutMs,
       );
 
       let response: Response;
 
       try {
-        response = await fetch(`${BASE_URL}${path}`, {
-          ...init,
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            ...(init.headers || {}),
+        response = await fetch(
+          `${BASE_URL}${path}`,
+          {
+            ...init,
+            signal: controller.signal,
+            headers: {
+              'Content-Type':
+                'application/json',
+              ...(init.headers || {}),
+            },
           },
-        });
+        );
       } finally {
         clearTimeout(timeout);
       }
@@ -89,28 +105,38 @@ async function request<T>(
         .catch(() => ({}));
 
       if (!response.ok) {
-        const raw = Array.isArray(body?.message)
+        const raw = Array.isArray(
+          body?.message,
+        )
           ? body.message.join(', ')
           : body?.message ||
             body?.error ||
             body?.description ||
             'Request failed';
 
-        const retryAfterMs = parseRetryAfter(
-          response.headers.get('retry-after'),
-        );
+        const retryAfterMs =
+          parseRetryAfter(
+            response.headers.get(
+              'retry-after',
+            ),
+          );
 
         const retryable =
           response.status === 429 ||
           response.status === 408 ||
           response.status >= 500;
 
-        if (retryable && attempt < retries) {
-          const delay =
+        if (
+          retryable &&
+          attempt < retries
+        ) {
+          await sleep(
             retryAfterMs ??
-            Math.min(4000, 600 * 2 ** attempt);
-
-          await sleep(delay);
+              Math.min(
+                5000,
+                700 * 2 ** attempt,
+              ),
+          );
           attempt += 1;
           continue;
         }
@@ -124,19 +150,17 @@ async function request<T>(
 
       return body as T;
     } catch (error: any) {
-      if (error?.name === 'AbortError') {
-        lastError = new ApiError(
-          'Request timed out. Check the backend URL and network connection.',
-          408,
-        );
-      } else {
-        lastError = error;
-      }
-
-      error = lastError;
+      lastError =
+        error?.name === 'AbortError'
+          ? new ApiError(
+              'Request timed out. Check the backend connection.',
+              408,
+            )
+          : error;
 
       if (
-        error instanceof ApiError &&
+        lastError instanceof
+          ApiError &&
         ![
           408,
           429,
@@ -144,17 +168,20 @@ async function request<T>(
           502,
           503,
           504,
-        ].includes(error.status)
+        ].includes(lastError.status)
       ) {
-        throw error;
+        throw lastError;
       }
 
       if (attempt >= retries) {
-        throw error;
+        throw lastError;
       }
 
       await sleep(
-        Math.min(4000, 600 * 2 ** attempt),
+        Math.min(
+          5000,
+          700 * 2 ** attempt,
+        ),
       );
 
       attempt += 1;
@@ -170,24 +197,46 @@ async function cachedRequest<T>(
   init: RequestInit,
   ttlMs: number,
 ): Promise<T> {
-  const cached = await cacheGet<T>(cacheKey);
+  const cached =
+    await cacheGet<T>(cacheKey);
 
-  if (cached.hit && cached.data !== undefined) {
+  if (
+    cached.hit &&
+    cached.data !== undefined
+  ) {
     return cached.data;
   }
 
   try {
-    const data = await request<T>(path, init, 2);
-    await cacheSet(cacheKey, data, ttlMs);
-    return data;
-  } catch (error) {
-    const stale = await cacheGet<T>(
+    const data =
+      await request<T>(
+        path,
+        init,
+        2,
+      );
+
+    await cacheSet(
       cacheKey,
-      true,
+      data,
+      ttlMs,
     );
 
-    if (stale.hit && stale.data !== undefined) {
-      await markStaleFallback(cacheKey);
+    return data;
+  } catch (error) {
+    const stale =
+      await cacheGet<T>(
+        cacheKey,
+        true,
+      );
+
+    if (
+      stale.hit &&
+      stale.data !== undefined
+    ) {
+      await markStaleFallback(
+        cacheKey,
+      );
+
       return stale.data;
     }
 
@@ -195,7 +244,9 @@ async function cachedRequest<T>(
   }
 }
 
-function auth(accessToken: string): HeadersInit {
+function auth(
+  accessToken: string,
+): HeadersInit {
   return {
     Authorization: `Bearer ${accessToken}`,
   };
@@ -210,7 +261,8 @@ export async function login(
     {
       method: 'POST',
       body: JSON.stringify({
-        email: email.trim().toLowerCase(),
+        email:
+          email.trim().toLowerCase(),
         password,
       }),
     },
@@ -225,7 +277,9 @@ export async function refreshSession(
     '/auth/refresh',
     {
       method: 'POST',
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({
+        refreshToken,
+      }),
     },
     0,
   );
@@ -240,13 +294,17 @@ export async function logout(
     {
       method: 'POST',
       headers: auth(accessToken),
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({
+        refreshToken,
+      }),
     },
     0,
   );
 }
 
-export async function me(accessToken: string) {
+export function me(
+  accessToken: string,
+) {
   return request('/auth/me', {
     headers: auth(accessToken),
   });
@@ -273,6 +331,8 @@ export type ZendeskTicket = {
   group_id?: number | null;
   organization_id?: number | null;
   ticket_form_id?: number | null;
+  brand_id?: number | null;
+  custom_status_id?: number | null;
   tags?: string[];
   custom_fields?: Array<{
     id: number;
@@ -295,7 +355,9 @@ export type ZendeskForm = {
   name: string;
   display_name?: string;
   active?: boolean;
+  default?: boolean;
   position?: number;
+  ticket_field_ids?: number[];
 };
 
 export type ZendeskFieldOption = {
@@ -312,8 +374,10 @@ export type ZendeskTicketField = {
   description?: string;
   type?: string;
   active?: boolean;
+  custom?: boolean;
   position?: number;
-  custom_field_options?: ZendeskFieldOption[];
+  custom_field_options?:
+    ZendeskFieldOption[];
 };
 
 export type ZendeskGroup = {
@@ -342,28 +406,88 @@ export type ZendeskSatisfactionRating = {
   updated_at?: string;
 };
 
+export type ZendeskTicketMetric = {
+  id: number;
+  ticket_id: number;
+  created_at?: string;
+  updated_at?: string;
+  assigned_at?: string | null;
+  solved_at?: string | null;
+  latest_comment_added_at?:
+    | string
+    | null;
+  requester_updated_at?:
+    | string
+    | null;
+  assignee_updated_at?:
+    | string
+    | null;
+  status_updated_at?: string | null;
+  replies?: number;
+  reopens?: number;
+  reply_time_in_minutes?: {
+    calendar?: number;
+    business?: number;
+  };
+  requester_wait_time_in_minutes?: {
+    calendar?: number;
+    business?: number;
+  };
+  first_resolution_time_in_minutes?: {
+    calendar?: number;
+    business?: number;
+  };
+  full_resolution_time_in_minutes?: {
+    calendar?: number;
+    business?: number;
+  };
+};
+
+export type ZendeskMetricEvent = {
+  id: number;
+  ticket_id: number;
+  metric?: string;
+  type?: string;
+  time?: string;
+  instance_id?: number;
+  sla?: {
+    target?: number;
+    business_hours?: boolean;
+    policy?: {
+      id?: number;
+      title?: string;
+    };
+  };
+};
+
 export type ZendeskTicketDetail = {
   ticket: ZendeskTicket;
   comments: ZendeskComment[];
+  ticket_metric?: ZendeskTicketMetric;
 };
 
 export type ZendeskHealth = {
   ok: boolean;
   workspace: string;
   account?: string | null;
+  role?: string | null;
+  authMode?: 'oauth' | 'api_token';
 };
 
 const TTL = {
   health: 30_000,
   views: 2 * 60_000,
   tickets: 60_000,
-  analytics: 5 * 60_000,
+  analytics: 4 * 60_000,
   metadata: 15 * 60_000,
   satisfaction: 5 * 60_000,
+  metrics: 3 * 60_000,
   detail: 45_000,
 };
 
-export function zendeskHealth(accessToken: string) {
+export function zendeskHealth(
+  accessToken: string,
+) {
   return cachedRequest<ZendeskHealth>(
     'zendesk:health',
     '/zendesk/health',
@@ -374,8 +498,12 @@ export function zendeskHealth(accessToken: string) {
   );
 }
 
-export function zendeskViews(accessToken: string) {
-  return cachedRequest<{ views: ZendeskView[] }>(
+export function zendeskViews(
+  accessToken: string,
+) {
+  return cachedRequest<{
+    views: ZendeskView[];
+  }>(
     'zendesk:views',
     '/zendesk/views',
     {
@@ -418,10 +546,11 @@ export function zendeskRecentTickets(
 
 export function zendeskAnalyticsTickets(
   accessToken: string,
-  days = 30,
+  days = 90,
 ) {
   return cachedRequest<{
     days: number;
+    scope: string;
     tickets: ZendeskTicket[];
     count: number;
     limited: boolean;
@@ -435,13 +564,73 @@ export function zendeskAnalyticsTickets(
   );
 }
 
-export function zendeskSatisfaction(
+export function zendeskAllTickets(
+  accessToken: string,
+) {
+  return cachedRequest<{
+    days: number;
+    scope: string;
+    tickets: ZendeskTicket[];
+    count: number;
+    limited: boolean;
+  }>(
+    'zendesk:analytics:all',
+    '/zendesk/analytics/tickets?scope=all&days=3650',
+    {
+      headers: auth(accessToken),
+    },
+    TTL.analytics,
+  );
+}
+
+export function zendeskTicketMetrics(
+  accessToken: string,
+  days = 90,
+) {
+  return cachedRequest<{
+    days: number;
+    metrics: ZendeskTicketMetric[];
+    count: number;
+    limited: boolean;
+  }>(
+    `zendesk:metrics:${days}`,
+    `/zendesk/ticket-metrics?days=${days}`,
+    {
+      headers: auth(accessToken),
+    },
+    TTL.metrics,
+  );
+}
+
+export function zendeskMetricEvents(
   accessToken: string,
   days = 30,
 ) {
   return cachedRequest<{
+    available: boolean;
     days: number;
-    ratings: ZendeskSatisfactionRating[];
+    events: ZendeskMetricEvent[];
+    count: number;
+    limited: boolean;
+    reason?: string;
+  }>(
+    `zendesk:metric-events:${days}`,
+    `/zendesk/metric-events?days=${days}`,
+    {
+      headers: auth(accessToken),
+    },
+    TTL.metrics,
+  );
+}
+
+export function zendeskSatisfaction(
+  accessToken: string,
+  days = 90,
+) {
+  return cachedRequest<{
+    days: number;
+    ratings:
+      ZendeskSatisfactionRating[];
     count: number;
   }>(
     `zendesk:satisfaction:${days}`,
@@ -453,7 +642,9 @@ export function zendeskSatisfaction(
   );
 }
 
-export function zendeskForms(accessToken: string) {
+export function zendeskForms(
+  accessToken: string,
+) {
   return cachedRequest<{
     ticket_forms: ZendeskForm[];
   }>(
@@ -466,9 +657,12 @@ export function zendeskForms(accessToken: string) {
   );
 }
 
-export function zendeskFields(accessToken: string) {
+export function zendeskFields(
+  accessToken: string,
+) {
   return cachedRequest<{
-    ticket_fields: ZendeskTicketField[];
+    ticket_fields:
+      ZendeskTicketField[];
   }>(
     'zendesk:fields',
     '/zendesk/fields',
@@ -479,7 +673,9 @@ export function zendeskFields(accessToken: string) {
   );
 }
 
-export function zendeskGroups(accessToken: string) {
+export function zendeskGroups(
+  accessToken: string,
+) {
   return cachedRequest<{
     groups: ZendeskGroup[];
   }>(
@@ -492,7 +688,9 @@ export function zendeskGroups(accessToken: string) {
   );
 }
 
-export function zendeskAgents(accessToken: string) {
+export function zendeskAgents(
+  accessToken: string,
+) {
   return cachedRequest<{
     users: ZendeskUser[];
   }>(

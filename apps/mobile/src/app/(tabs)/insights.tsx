@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -13,113 +13,188 @@ import {
   Text,
   View,
 } from 'react-native';
-import { router, type Href } from 'expo-router';
+import {
+  router,
+  type Href,
+} from 'expo-router';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { AppCard } from '@/components/AppCard';
-import { TicketCard } from '@/components/tickets/TicketCard';
 import { AgentCard } from '@/components/team/AgentCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
 import {
   buildBreakdown,
-  ticketsForDimension,
-  type BreakdownRow,
 } from '@/lib/insight-analytics';
-import { detectedMapping } from '@/lib/zendesk-dimensions';
 import {
-  badFeedbackBreakdowns,
+  detectedMapping,
+  fieldValue,
+} from '@/lib/zendesk-dimensions';
+import {
   buildAgentRows,
   feedbackSummary,
 } from '@/lib/feedback-team';
 
-type InsightTab =
+type Tab =
   | 'forms'
   | 'issues'
-  | 'devices'
+  | 'products'
   | 'regions'
+  | 'custom'
   | 'feedback'
   | 'team';
 
 const TABS: Array<{
-  key: InsightTab;
+  key: Tab;
   label: string;
 }> = [
   { key: 'forms', label: 'Forms' },
   { key: 'issues', label: 'Issues' },
-  { key: 'devices', label: 'Devices' },
-  { key: 'regions', label: 'Regions' },
-  { key: 'feedback', label: 'Feedback' },
+  {
+    key: 'products',
+    label: 'Products',
+  },
+  {
+    key: 'regions',
+    label: 'Regions',
+  },
+  { key: 'custom', label: 'Custom' },
+  {
+    key: 'feedback',
+    label: 'Feedback',
+  },
   { key: 'team', label: 'Team' },
 ];
 
 export default function Insights() {
-  const { session, ensureFreshSession } = useAuth();
+  const {
+    session,
+    ensureFreshSession,
+  } = useAuth();
 
   const [tickets, setTickets] =
     useState<api.ZendeskTicket[]>([]);
   const [forms, setForms] =
     useState<api.ZendeskForm[]>([]);
   const [fields, setFields] =
-    useState<api.ZendeskTicketField[]>([]);
+    useState<
+      api.ZendeskTicketField[]
+    >([]);
   const [ratings, setRatings] =
-    useState<api.ZendeskSatisfactionRating[]>([]);
+    useState<
+      api.ZendeskSatisfactionRating[]
+    >([]);
   const [agents, setAgents] =
     useState<api.ZendeskUser[]>([]);
-  const [tab, setTab] = useState<InsightTab>('forms');
-  const [selected, setSelected] =
-    useState<string | null>(null);
+
+  const [tab, setTab] =
+    useState<Tab>('forms');
+  const [loading, setLoading] =
+    useState(true);
   const [refreshing, setRefreshing] =
     useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [
+    feedbackAvailable,
+    setFeedbackAvailable,
+  ] = useState(true);
 
   const load = useCallback(async () => {
     setError('');
 
-    const fresh = await ensureFreshSession();
+    const fresh =
+      await ensureFreshSession();
     const token =
-      fresh?.accessToken || session?.accessToken;
+      fresh?.accessToken ||
+      session?.accessToken;
 
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
+      const ticketResult =
+        await api.zendeskAllTickets(
+          token,
+        );
+
+      setTickets(
+        ticketResult.tickets || [],
+      );
+
+      const results =
+        await Promise.allSettled([
+          api.zendeskForms(token),
+          api.zendeskFields(token),
+          api.zendeskSatisfaction(
+            token,
+            365,
+          ),
+          api.zendeskAgents(token),
+        ]);
+
       const [
-        ticketResult,
         formResult,
         fieldResult,
         satisfactionResult,
         agentResult,
-      ] = await Promise.all([
-        api.zendeskAnalyticsTickets(token, 30),
-        api.zendeskForms(token),
-        api.zendeskFields(token),
-        api.zendeskSatisfaction(token, 30),
-        api.zendeskAgents(token),
-      ]);
+      ] = results;
 
-      setTickets(ticketResult.tickets || []);
-      setForms(
-        (formResult.ticket_forms || []).filter(
-          (form) => form.active !== false,
-        ),
-      );
-      setFields(
-        (fieldResult.ticket_fields || []).filter(
-          (field) => field.active !== false,
-        ),
-      );
-      setRatings(satisfactionResult.ratings || []);
-      setAgents(agentResult.users || []);
+      if (
+        formResult.status ===
+        'fulfilled'
+      ) {
+        setForms(
+          formResult.value
+            .ticket_forms || [],
+        );
+      }
+
+      if (
+        fieldResult.status ===
+        'fulfilled'
+      ) {
+        setFields(
+          fieldResult.value
+            .ticket_fields || [],
+        );
+      }
+
+      if (
+        satisfactionResult.status ===
+        'fulfilled'
+      ) {
+        setRatings(
+          satisfactionResult.value
+            .ratings || [],
+        );
+        setFeedbackAvailable(true);
+      } else {
+        setFeedbackAvailable(false);
+      }
+
+      if (
+        agentResult.status ===
+        'fulfilled'
+      ) {
+        setAgents(
+          agentResult.value.users ||
+            [],
+        );
+      }
     } catch (e: any) {
       setError(
         e?.message ||
-          'Unable to load Zendesk insight data.',
+          'Unable to load Zendesk tickets.',
       );
     } finally {
       setLoading(false);
     }
-  }, [ensureFreshSession, session?.accessToken]);
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     void load();
@@ -136,90 +211,162 @@ export default function Insights() {
     [fields],
   );
 
-  const feedback = useMemo(
-    () => feedbackSummary(ratings),
-    [ratings],
-  );
-
-  const bad = useMemo(
-    () =>
-      badFeedbackBreakdowns(
-        ratings,
-        tickets,
-        fields,
-        forms,
-      ),
-    [fields, forms, ratings, tickets],
-  );
-
-  const team = useMemo(
-    () => buildAgentRows(agents, tickets, ratings),
-    [agents, ratings, tickets],
-  );
-
-  const dimensionTab =
-    tab === 'forms' ||
-    tab === 'issues' ||
-    tab === 'devices' ||
-    tab === 'regions';
-
   const dimension =
     tab === 'forms'
       ? 'form'
       : tab === 'issues'
         ? 'issue'
-        : tab === 'devices'
+        : tab === 'products'
           ? 'device'
           : 'region';
 
-  const rows = useMemo(
+  const breakdown = useMemo(
     () =>
-      dimensionTab
+      [
+        'forms',
+        'issues',
+        'products',
+        'regions',
+      ].includes(tab)
         ? buildBreakdown(
             tickets,
             fields,
             forms,
-            dimension,
+            dimension as
+              | 'form'
+              | 'issue'
+              | 'device'
+              | 'region',
           )
         : [],
-    [dimension, dimensionTab, fields, forms, tickets],
-  );
-
-  const selectedTickets = useMemo(() => {
-    if (!selected || !dimensionTab) return [];
-
-    return ticketsForDimension(
-      tickets,
+    [
+      dimension,
       fields,
       forms,
-      dimension,
-      selected,
+      tab,
+      tickets,
+    ],
+  );
+
+  const customRows = useMemo(() => {
+    const rows: Array<{
+      fieldId: number;
+      field: string;
+      value: string;
+      count: number;
+    }> = [];
+
+    for (const field of fields.filter(
+      (item) =>
+        item.active !== false &&
+        item.custom !== false,
+    )) {
+      const counts =
+        new Map<string, number>();
+
+      for (const ticket of tickets) {
+        const value =
+          fieldValue(
+            ticket,
+            field,
+          );
+
+        if (!value) continue;
+
+        counts.set(
+          value,
+          (counts.get(value) || 0) +
+            1,
+        );
+      }
+
+      for (const [
+        value,
+        count,
+      ] of counts) {
+        rows.push({
+          fieldId: field.id,
+          field: field.title,
+          value,
+          count,
+        });
+      }
+    }
+
+    return rows.sort(
+      (a, b) =>
+        b.count - a.count,
     );
-  }, [
-    dimension,
-    dimensionTab,
-    fields,
-    forms,
-    selected,
-    tickets,
-  ]);
+  }, [fields, tickets]);
 
-  function switchTab(next: InsightTab) {
-    setTab(next);
-    setSelected(null);
+  const feedback = useMemo(
+    () => feedbackSummary(ratings),
+    [ratings],
+  );
+
+  const team = useMemo(
+    () =>
+      buildAgentRows(
+        agents,
+        tickets,
+        ratings,
+      ),
+    [agents, ratings, tickets],
+  );
+
+  function openDimension(
+    value: string,
+  ) {
+    router.push({
+      pathname: '/insight-results',
+      params: {
+        dimension,
+        value,
+        title: value,
+      },
+    } as unknown as Href);
   }
 
-  function openTicket(id: number) {
+  function openCustom(
+    row: {
+      fieldId: number;
+      field: string;
+      value: string;
+    },
+  ) {
     router.push({
-      pathname: '/ticket/[id]',
-      params: { id: String(id) },
-    });
+      pathname: '/insight-results',
+      params: {
+        mode: 'custom-field',
+        fieldId: String(
+          row.fieldId,
+        ),
+        value: row.value,
+        title: `${row.field}: ${row.value}`,
+      },
+    } as unknown as Href);
   }
 
-  function openAgent(id: number) {
+  function openFeedback(
+    score:
+      | 'good'
+      | 'bad'
+      | 'all',
+  ) {
     router.push({
-      pathname: '/agent/[id]',
-      params: { id: String(id) },
+      pathname: '/insight-results',
+      params: {
+        mode: 'feedback',
+        score,
+        title:
+          score === 'all'
+            ? 'All feedback'
+            : `${score
+                .charAt(0)
+                .toUpperCase()}${score.slice(
+                1,
+              )} feedback`,
+      },
     } as unknown as Href);
   }
 
@@ -237,43 +384,41 @@ export default function Insights() {
     >
       <WorkspaceHeader />
 
-      <View style={s.hero}>
-        <View>
-          <Text style={s.eyebrow}>
-            30 DAY SUPPORT INSIGHTS
-          </Text>
-          <Text style={s.title}>
-            Patterns that matter
-          </Text>
-          <Text style={s.caption}>
-            Forms, issues, devices, regions, feedback and team workload
-          </Text>
-        </View>
-
-        <View style={s.live}>
-          <View style={s.liveDot} />
-          <Text style={s.liveText}>LIVE</Text>
-        </View>
-      </View>
+      <Text style={s.eyebrow}>
+        ZENDESK INSIGHTS
+      </Text>
+      <Text style={s.title}>
+        Support intelligence
+      </Text>
+      <Text style={s.caption}>
+        Forms, issues, Atomos products,
+        custom fields, feedback and team
+      </Text>
 
       <ScrollView
         horizontal
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator={
+          false
+        }
         contentContainerStyle={s.tabs}
       >
         {TABS.map((item) => (
           <Pressable
             key={item.key}
-            onPress={() => switchTab(item.key)}
+            onPress={() =>
+              setTab(item.key)
+            }
             style={[
               s.tab,
-              tab === item.key && s.tabActive,
+              tab === item.key &&
+                s.tabActive,
             ]}
           >
             <Text
               style={[
                 s.tabText,
-                tab === item.key && s.tabTextActive,
+                tab === item.key &&
+                  s.tabTextActive,
               ]}
             >
               {item.label}
@@ -283,235 +428,273 @@ export default function Insights() {
       </ScrollView>
 
       {error ? (
-        <AppCard style={s.errorCard}>
-          <Text style={s.errorTitle}>
-            Insights unavailable
+        <AppCard>
+          <Text style={s.error}>
+            {error}
           </Text>
-          <Text style={s.errorText}>{error}</Text>
         </AppCard>
       ) : null}
 
       {loading ? (
         <View style={s.loading}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={s.loadingText}>
-            Loading support insight dataâ€¦
-          </Text>
+          <ActivityIndicator
+            color={colors.primary}
+          />
         </View>
-      ) : (
+      ) : null}
+
+      {!loading &&
+      [
+        'forms',
+        'issues',
+        'products',
+        'regions',
+      ].includes(tab) ? (
         <>
-          {dimensionTab ? (
-            <>
-              <AppCard style={s.mappingCard}>
-                <View style={s.mappingHeader}>
-                  <Text style={s.mappingTitle}>
-                    Custom-field mapping
-                  </Text>
-                  <Text style={s.mappingBadge}>
-                    AUTO
-                  </Text>
-                </View>
+          <AppCard style={s.mapping}>
+            <MappingRow
+              label="Product"
+              value={
+                mapping.device
+                  ?.title ||
+                'Not detected'
+              }
+            />
+            <MappingRow
+              label="Issue"
+              value={
+                mapping.issue?.title ||
+                'Not detected'
+              }
+            />
+            <MappingRow
+              label="Region"
+              value={
+                mapping.region
+                  ?.title ||
+                'Not detected'
+              }
+              last
+            />
+          </AppCard>
 
-                <MappingRow
-                  label="Region"
-                  value={
-                    mapping.region
-                      ? mapping.region.title
-                      : 'Not detected'
+          <View style={s.sectionRow}>
+            <Text style={s.sectionTitle}>
+              {
+                TABS.find(
+                  (item) =>
+                    item.key === tab,
+                )?.label
+              }
+            </Text>
+            <Text style={s.count}>
+              {breakdown.length}
+            </Text>
+          </View>
+
+          <AppCard>
+            {breakdown.map(
+              (row, index) => (
+                <Pressable
+                  key={row.key}
+                  onPress={() =>
+                    openDimension(
+                      row.label,
+                    )
                   }
-                />
-                <MappingRow
-                  label="Device"
-                  value={
-                    mapping.device
-                      ? mapping.device.title
-                      : 'Not detected'
-                  }
-                />
-                <MappingRow
-                  label="Issue"
-                  value={
-                    mapping.issue
-                      ? mapping.issue.title
-                      : 'Not detected'
-                  }
-                />
-              </AppCard>
-
-              <View style={s.sectionHeader}>
-                <View>
-                  <Text style={s.sectionTitle}>
-                    {
-                      TABS.find(
-                        (item) => item.key === tab,
-                      )?.label
-                    }
-                  </Text>
-                  <Text style={s.sectionCaption}>
-                    Tap to see actual ticket subjects
-                  </Text>
-                </View>
-                <Text style={s.countBadge}>
-                  {rows.length}
-                </Text>
-              </View>
-
-              <AppCard>
-                {rows.slice(0, 30).map(
-                  (row, index) => (
-                    <InsightRow
-                      key={row.key}
-                      row={row}
-                      last={
-                        index ===
-                        Math.min(rows.length, 30) - 1
-                      }
-                      selected={
-                        selected === row.label
-                      }
-                      onPress={() =>
-                        setSelected(
-                          selected === row.label
-                            ? null
-                            : row.label,
-                        )
-                      }
-                    />
-                  ),
-                )}
-              </AppCard>
-
-              {selected ? (
-                <>
-                  <View style={s.selectedHeader}>
-                    <View>
-                      <Text style={s.selectedEyebrow}>
-                        RELATED TICKETS
-                      </Text>
-                      <Text style={s.selectedTitle}>
-                        {selected}
-                      </Text>
-                    </View>
-                    <Text style={s.selectedCount}>
-                      {selectedTickets.length}
+                  style={[
+                    s.row,
+                    index ===
+                      breakdown.length -
+                        1 &&
+                      s.lastRow,
+                  ]}
+                >
+                  <View style={s.rowCopy}>
+                    <Text
+                      style={s.rowTitle}
+                    >
+                      {row.label}
+                    </Text>
+                    <Text
+                      style={s.rowMeta}
+                    >
+                      {row.open} open ·{' '}
+                      {row.high} high ·{' '}
+                      {row.unassigned}{' '}
+                      unassigned
                     </Text>
                   </View>
-
-                  {selectedTickets
-                    .slice(0, 30)
-                    .map((ticket) => (
-                      <TicketCard
-                        key={ticket.id}
-                        ticket={ticket}
-                        onPress={() =>
-                          openTicket(ticket.id)
-                        }
-                      />
-                    ))}
-                </>
-              ) : null}
-            </>
-          ) : null}
-
-          {tab === 'feedback' ? (
-            <>
-              <View style={s.feedbackGrid}>
-                <FeedbackCard
-                  label="Total Ratings"
-                  value={feedback.total}
-                  tone="neutral"
-                />
-                <FeedbackCard
-                  label="Good"
-                  value={`${feedback.goodPct}%`}
-                  caption={`${feedback.good} ratings`}
-                  tone="good"
-                />
-                <FeedbackCard
-                  label="Bad"
-                  value={`${feedback.badPct}%`}
-                  caption={`${feedback.bad} ratings`}
-                  tone="bad"
-                />
-              </View>
-
-              <BreakdownSection
-                title="Bad feedback by device"
-                rows={bad.devices}
-              />
-              <BreakdownSection
-                title="Bad feedback by region"
-                rows={bad.regions}
-              />
-              <BreakdownSection
-                title="Bad feedback by form"
-                rows={bad.forms}
-              />
-
-              <View style={s.selectedHeader}>
-                <View>
-                  <Text style={s.selectedEyebrow}>
-                    BAD FEEDBACK TICKETS
+                  <Text style={s.rowCount}>
+                    {row.count}
                   </Text>
-                  <Text style={s.selectedTitle}>
-                    Recent negative ratings
+                  <Text style={s.chevron}>
+                    ›
                   </Text>
-                </View>
-                <Text style={s.selectedCount}>
-                  {bad.rows.length}
-                </Text>
-              </View>
-
-              {bad.rows.slice(0, 30).map(
-                ({ rating, ticket }) =>
-                  ticket ? (
-                    <TicketCard
-                      key={`${rating.id}-${ticket.id}`}
-                      ticket={ticket}
-                      onPress={() =>
-                        openTicket(ticket.id)
-                      }
-                    />
-                  ) : null,
-              )}
-            </>
-          ) : null}
-
-          {tab === 'team' ? (
-            <>
-              <View style={s.sectionHeader}>
-                <View>
-                  <Text style={s.sectionTitle}>
-                    Team workload
-                  </Text>
-                  <Text style={s.sectionCaption}>
-                    Assigned/open/high tickets + CSAT
-                  </Text>
-                </View>
-                <Text style={s.countBadge}>
-                  {team.length}
-                </Text>
-              </View>
-
-              {team.map((row) => (
-                <AgentCard
-                  key={row.id}
-                  row={row}
-                  onPress={() => openAgent(row.id)}
-                />
-              ))}
-
-              {!team.length ? (
-                <View style={s.empty}>
-                  <Text style={s.emptyText}>
-                    No active agents returned.
-                  </Text>
-                </View>
-              ) : null}
-            </>
-          ) : null}
+                </Pressable>
+              ),
+            )}
+          </AppCard>
         </>
-      )}
+      ) : null}
+
+      {!loading &&
+      tab === 'custom' ? (
+        <>
+          <View style={s.sectionRow}>
+            <Text style={s.sectionTitle}>
+              Custom fields
+            </Text>
+            <Text style={s.count}>
+              {customRows.length}
+            </Text>
+          </View>
+
+          <AppCard>
+            {customRows
+              .slice(0, 160)
+              .map(
+                (
+                  row,
+                  index,
+                ) => (
+                  <Pressable
+                    key={`${row.fieldId}:${row.value}`}
+                    onPress={() =>
+                      openCustom(row)
+                    }
+                    style={[
+                      s.row,
+                      index ===
+                        Math.min(
+                          customRows.length,
+                          160,
+                        ) -
+                          1 &&
+                        s.lastRow,
+                    ]}
+                  >
+                    <View
+                      style={s.rowCopy}
+                    >
+                      <Text
+                        style={
+                          s.fieldName
+                        }
+                      >
+                        {row.field}
+                      </Text>
+                      <Text
+                        style={
+                          s.rowTitle
+                        }
+                      >
+                        {row.value}
+                      </Text>
+                    </View>
+                    <Text
+                      style={s.rowCount}
+                    >
+                      {row.count}
+                    </Text>
+                    <Text
+                      style={s.chevron}
+                    >
+                      ›
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+          </AppCard>
+        </>
+      ) : null}
+
+      {!loading &&
+      tab === 'feedback' ? (
+        feedbackAvailable ? (
+          <View style={s.feedbackGrid}>
+            <FeedbackCard
+              label="Good"
+              value={feedback.good}
+              percent={
+                feedback.goodPct
+              }
+              onPress={() =>
+                openFeedback('good')
+              }
+            />
+            <FeedbackCard
+              label="Bad"
+              value={feedback.bad}
+              percent={
+                feedback.badPct
+              }
+              danger
+              onPress={() =>
+                openFeedback('bad')
+              }
+            />
+            <FeedbackCard
+              label="All"
+              value={feedback.total}
+              percent={100}
+              onPress={() =>
+                openFeedback('all')
+              }
+            />
+          </View>
+        ) : (
+          <AppCard>
+            <Text
+              style={
+                s.unavailableTitle
+              }
+            >
+              Feedback unavailable
+            </Text>
+            <Text
+              style={
+                s.unavailableText
+              }
+            >
+              Zendesk Satisfaction
+              Ratings could not be loaded
+              for this account/token.
+            </Text>
+          </AppCard>
+        )
+      ) : null}
+
+      {!loading && tab === 'team' ? (
+        <>
+          <View style={s.sectionRow}>
+            <Text style={s.sectionTitle}>
+              Team
+            </Text>
+            <Text style={s.count}>
+              {team.length}
+            </Text>
+          </View>
+
+          {team.map((row) => (
+            <AgentCard
+              key={row.id}
+              row={row}
+              onPress={() =>
+                router.push({
+                  pathname:
+                    '/agent/[id]',
+                  params: {
+                    id: String(
+                      row.id,
+                    ),
+                  },
+                } as unknown as Href)
+              }
+            />
+          ))}
+        </>
+      ) : null}
     </ScrollView>
   );
 }
@@ -519,148 +702,61 @@ export default function Insights() {
 function MappingRow({
   label,
   value,
+  last = false,
 }: {
   label: string;
   value: string;
+  last?: boolean;
 }) {
   return (
-    <View style={s.mapRow}>
-      <Text style={s.mapLabel}>{label}</Text>
-      <Text style={s.mapValue}>{value}</Text>
-    </View>
-  );
-}
-
-function InsightRow({
-  row,
-  last,
-  selected,
-  onPress,
-}: {
-  row: BreakdownRow;
-  last: boolean;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
+    <View
       style={[
-        s.row,
+        s.mappingRow,
         last && s.lastRow,
-        selected && s.rowSelected,
       ]}
     >
-      <View style={s.rowMain}>
-        <Text style={s.rowLabel}>
-          {row.label}
-        </Text>
-        <Text style={s.rowStats}>
-          Open {row.open} â€¢ High {row.high} â€¢ Unassigned {row.unassigned}
-        </Text>
-      </View>
-
-      <Text style={s.rowCount}>{row.count}</Text>
-    </Pressable>
+      <Text style={s.mappingLabel}>
+        {label}
+      </Text>
+      <Text style={s.mappingValue}>
+        {value}
+      </Text>
+    </View>
   );
 }
 
 function FeedbackCard({
   label,
   value,
-  caption,
-  tone,
+  percent,
+  danger = false,
+  onPress,
 }: {
   label: string;
-  value: number | string;
-  caption?: string;
-  tone: 'neutral' | 'good' | 'bad';
+  value: number;
+  percent: number;
+  danger?: boolean;
+  onPress: () => void;
 }) {
-  const bg =
-    tone === 'good'
-      ? colors.primarySoft
-      : tone === 'bad'
-        ? '#FDECEC'
-        : colors.surface;
-
-  const fg =
-    tone === 'good'
-      ? colors.primary
-      : tone === 'bad'
-        ? colors.danger
-        : colors.text;
-
   return (
-    <View style={[s.feedbackCard, { backgroundColor: bg }]}>
-      <Text style={s.feedbackLabel}>{label}</Text>
-      <Text style={[s.feedbackValue, { color: fg }]}>
+    <Pressable
+      onPress={onPress}
+      style={[
+        s.feedbackCard,
+        danger &&
+          s.feedbackDanger,
+      ]}
+    >
+      <Text style={s.feedbackLabel}>
+        {label}
+      </Text>
+      <Text style={s.feedbackValue}>
         {value}
       </Text>
-      {caption ? (
-        <Text style={s.feedbackCaption}>
-          {caption}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-function BreakdownSection({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: Array<{ label: string; count: number }>;
-}) {
-  const max = Math.max(1, ...rows.map((r) => r.count));
-
-  return (
-    <>
-      <View style={s.sectionHeader}>
-        <Text style={s.sectionTitle}>{title}</Text>
-      </View>
-      <AppCard>
-        {rows.slice(0, 8).map((row, index) => (
-          <View
-            key={row.label}
-            style={[
-              s.breakRow,
-              index ===
-                Math.min(rows.length, 8) - 1 &&
-                s.lastRow,
-            ]}
-          >
-            <View style={s.breakTop}>
-              <Text style={s.breakLabel}>
-                {row.label}
-              </Text>
-              <Text style={s.breakValue}>
-                {row.count}
-              </Text>
-            </View>
-            <View style={s.breakTrack}>
-              <View
-                style={[
-                  s.breakFill,
-                  {
-                    width: `${Math.max(
-                      6,
-                      (row.count / max) * 100,
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        ))}
-
-        {!rows.length ? (
-          <Text style={s.emptyText}>
-            No bad feedback data available.
-          </Text>
-        ) : null}
-      </AppCard>
-    </>
+      <Text style={s.feedbackMeta}>
+        {percent}% · View tickets ›
+      </Text>
+    </Pressable>
   );
 }
 
@@ -670,62 +766,37 @@ const s = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingTop: 8,
     paddingBottom: 120,
-  },
-  hero: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
   eyebrow: {
     color: colors.primary,
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
   },
   title: {
     color: colors.text,
-    fontSize: 29,
+    fontSize: 28,
     fontWeight: '900',
-    marginTop: 4,
+    marginTop: 5,
   },
   caption: {
     color: colors.muted,
     fontSize: 11,
-    marginTop: 4,
-    maxWidth: 270,
-  },
-  live: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    alignSelf: 'flex-start',
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.lime,
-  },
-  liveText: {
-    color: colors.primary,
-    fontSize: 9,
-    fontWeight: '900',
+    lineHeight: 16,
+    marginTop: 5,
   },
   tabs: {
+    gap: 8,
     paddingVertical: 16,
-    gap: 7,
   },
   tab: {
-    backgroundColor: colors.surface,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 999,
+    backgroundColor: colors.surface,
     paddingHorizontal: 13,
     paddingVertical: 9,
   },
@@ -736,91 +807,56 @@ const s = StyleSheet.create({
   tabText: {
     color: colors.muted,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   tabTextActive: {
-    color: '#fff',
+    color: '#FFFFFF',
   },
-  errorCard: {
-    marginBottom: 12,
-  },
-  errorTitle: {
+  error: {
     color: colors.danger,
-    fontWeight: '900',
-  },
-  errorText: {
-    color: colors.text,
-    marginTop: 5,
-    fontSize: 12,
+    fontWeight: '700',
   },
   loading: {
+    paddingVertical: 65,
     alignItems: 'center',
-    paddingVertical: 70,
   },
-  loadingText: {
-    color: colors.muted,
-    fontSize: 12,
-    marginTop: 10,
+  mapping: {
+    marginBottom: 15,
   },
-  mappingCard: {
-    backgroundColor: '#F4FAF7',
-  },
-  mappingHeader: {
+  mappingRow: {
+    minHeight: 42,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    gap: 12,
   },
-  mappingTitle: {
-    color: colors.text,
-    fontWeight: '900',
-    fontSize: 13,
+  lastRow: {
+    borderBottomWidth: 0,
   },
-  mappingBadge: {
-    color: colors.cyan,
-    backgroundColor: colors.cyanSoft,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  mapRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    paddingVertical: 7,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  mapLabel: {
+  mappingLabel: {
     color: colors.muted,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
   },
-  mapValue: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: '700',
-    flex: 1,
+  mappingValue: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '900',
     textAlign: 'right',
+    flex: 1,
   },
-  sectionHeader: {
-    marginTop: 22,
-    marginBottom: 10,
+  sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 9,
   },
   sectionTitle: {
     color: colors.text,
     fontSize: 18,
     fontWeight: '900',
   },
-  sectionCaption: {
-    color: colors.muted,
-    fontSize: 10,
-    marginTop: 3,
-  },
-  countBadge: {
+  count: {
     color: colors.primary,
     backgroundColor: colors.primarySoft,
     borderRadius: 999,
@@ -828,134 +864,83 @@ const s = StyleSheet.create({
     paddingVertical: 5,
     fontSize: 10,
     fontWeight: '900',
-    alignSelf: 'flex-start',
   },
   row: {
-    minHeight: 64,
+    minHeight: 61,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
   },
-  lastRow: {
-    borderBottomWidth: 0,
-  },
-  rowSelected: {
-    backgroundColor: '#F4FAF7',
-  },
-  rowMain: {
+  rowCopy: {
     flex: 1,
-    paddingRight: 10,
   },
-  rowLabel: {
+  rowTitle: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
   },
-  rowStats: {
+  rowMeta: {
     color: colors.muted,
     fontSize: 9,
-    marginTop: 5,
+    marginTop: 4,
+  },
+  fieldName: {
+    color: colors.primary,
+    fontSize: 9,
+    fontWeight: '900',
+    marginBottom: 4,
   },
   rowCount: {
     color: colors.primary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
   },
-  selectedHeader: {
-    marginTop: 24,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  selectedEyebrow: {
-    color: colors.cyan,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  selectedTitle: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '900',
-    marginTop: 3,
-  },
-  selectedCount: {
-    color: colors.primary,
-    fontSize: 20,
-    fontWeight: '900',
+  chevron: {
+    color: colors.muted,
+    fontSize: 23,
   },
   feedbackGrid: {
-    flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   feedbackCard: {
-    flex: 1,
-    minHeight: 116,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 17,
-    padding: 14,
+    borderColor: '#CDE7DC',
+    backgroundColor: '#EEF8F3',
+    padding: 17,
+  },
+  feedbackDanger: {
+    backgroundColor: '#FFF3F3',
+    borderColor: '#F1D2D2',
   },
   feedbackLabel: {
     color: colors.muted,
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
   },
   feedbackValue: {
-    fontSize: 26,
+    color: colors.text,
+    fontSize: 31,
     fontWeight: '900',
-    marginTop: 11,
+    marginTop: 7,
   },
-  feedbackCaption: {
+  feedbackMeta: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  unavailableTitle: {
+    color: colors.warning,
+    fontWeight: '900',
+  },
+  unavailableText: {
     color: colors.muted,
-    fontSize: 9,
+    fontSize: 10,
+    lineHeight: 15,
     marginTop: 5,
   },
-  breakRow: {
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  breakTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  breakLabel: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '800',
-    flex: 1,
-  },
-  breakValue: {
-    color: colors.danger,
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  breakTrack: {
-    height: 6,
-    backgroundColor: '#EEF2F1',
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  breakFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: colors.cyan,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: 30,
-  },
-  emptyText: {
-    color: colors.muted,
-    fontSize: 11,
-    paddingVertical: 8,
-  },
 });
-
-
-
-
-

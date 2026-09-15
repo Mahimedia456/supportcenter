@@ -1,50 +1,51 @@
-﻿{
-    "expo":  {
-                 "name":  "Support Command Center",
-                 "slug":  "support-command-center",
-                 "version":  "0.2.0",
-                 "orientation":  "portrait",
-                 "scheme":  "supportcommandcenter",
-                 "userInterfaceStyle":  "light",
-                 "newArchEnabled":  true,
-                 "icon":  "./assets/brand/app-icon.png",
-                 "splash":  {
-                                "image":  "./assets/brand/final/support-command-center-logo-transparent.png",
-                                "resizeMode":  "contain",
-                                "backgroundColor":  "#F7FCFA"
-                            },
-                 "android":  {
-                                 "package":  "com.mahimediasolutions.supportcommandcenter",
-                                 "adaptiveIcon":  {
-                                                      "foregroundImage":  "./assets/brand/adaptive-icon.png",
-                                                      "backgroundColor":  "#0F5132",
-                                                      "monochromeImage":  "./assets/brand/adaptive-icon-monochrome.png"
-                                                  },
-                                 "softwareKeyboardLayoutMode":  "resize"
-                             },
-                 "ios":  {
-                             "bundleIdentifier":  "com.mahimediasolutions.supportcommandcenter",
-                             "supportsTablet":  true
-                         },
-                 "plugins":  [
-                                 "expo-router",
-                                 "expo-secure-store",
-                                 [
-                                     "expo-splash-screen",
-                                     {
-                                         "imageWidth":  220,
-                                         "backgroundColor":  "#F7FCFA",
-                                         "resizeMode":  "contain",
-                                         "dark":  {
-                                                      "image":  "./assets/brand/final/support-command-center-logo-transparent.png",
-                                                      "backgroundColor":  "#F7FCFA"
-                                                  },
-                                         "image":  "./assets/brand/final/support-command-center-logo-transparent.png"
-                                     }
-                                 ]
-                             ],
-                 "experiments":  {
-                                     "typedRoutes":  true
-                                 }
-             }
+{
+  "expo": {
+    "name": "Support Command Center",
+    "slug": "support-command-center",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "scheme": "supportcommandcenter",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/brand/app-icon.png",
+    "splash": {
+      "image": "./assets/brand/final/support-command-center-logo-transparent.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7FCFA"
+    },
+    "android": {
+      "package": "com.mahimediasolutions.supportcommandcenter",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/adaptive-icon.png",
+        "backgroundColor": "#0F5132",
+        "monochromeImage": "./assets/brand/adaptive-icon-monochrome.png"
+      },
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "ios": {
+      "bundleIdentifier": "com.mahimediasolutions.supportcommandcenter",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "imageWidth": 220,
+          "backgroundColor": "#F7FCFA",
+          "resizeMode": "contain",
+          "dark": {
+            "image": "./assets/brand/final/support-command-center-logo-transparent.png",
+            "backgroundColor": "#F7FCFA"
+          },
+          "image": "./assets/brand/final/support-command-center-logo-transparent.png"
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
 }

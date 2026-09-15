@@ -1,4 +1,10 @@
-import { Controller, Get, Headers, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { ZendeskService } from './zendesk.service';
 
@@ -31,7 +37,10 @@ export class ZendeskController {
     @Headers('authorization') header?: string,
   ) {
     const payload = this.access(header);
-    return this.zendesk.viewTickets(payload.workspaceId, id);
+    return this.zendesk.viewTickets(
+      payload.workspaceId,
+      id,
+    );
   }
 
   @Get('tickets')
@@ -43,15 +52,64 @@ export class ZendeskController {
   @Get('analytics/tickets')
   analyticsTickets(
     @Query('days') daysRaw: string | undefined,
+    @Query('scope') scope: string | undefined,
+    @Headers('authorization') header?: string,
+  ) {
+    const payload = this.access(header);
+
+    const parsed = Number(daysRaw || 90);
+    const days = Number.isFinite(parsed)
+      ? Math.max(
+          1,
+          Math.min(3650, Math.floor(parsed)),
+        )
+      : 90;
+
+    return this.zendesk.analyticsTickets(
+      payload.workspaceId,
+      days,
+      scope === 'all',
+    );
+  }
+
+  @Get('ticket-metrics')
+  ticketMetrics(
+    @Query('days') daysRaw: string | undefined,
+    @Headers('authorization') header?: string,
+  ) {
+    const payload = this.access(header);
+    const parsed = Number(daysRaw || 90);
+    const days = Number.isFinite(parsed)
+      ? Math.max(
+          1,
+          Math.min(365, Math.floor(parsed)),
+        )
+      : 90;
+
+    return this.zendesk.ticketMetrics(
+      payload.workspaceId,
+      days,
+    );
+  }
+
+  @Get('metric-events')
+  metricEvents(
+    @Query('days') daysRaw: string | undefined,
     @Headers('authorization') header?: string,
   ) {
     const payload = this.access(header);
     const parsed = Number(daysRaw || 30);
     const days = Number.isFinite(parsed)
-      ? Math.max(1, Math.min(90, Math.floor(parsed)))
+      ? Math.max(
+          1,
+          Math.min(90, Math.floor(parsed)),
+        )
       : 30;
 
-    return this.zendesk.analyticsTickets(payload.workspaceId, days);
+    return this.zendesk.metricEvents(
+      payload.workspaceId,
+      days,
+    );
   }
 
   @Get('satisfaction')
@@ -60,12 +118,18 @@ export class ZendeskController {
     @Headers('authorization') header?: string,
   ) {
     const payload = this.access(header);
-    const parsed = Number(daysRaw || 30);
+    const parsed = Number(daysRaw || 90);
     const days = Number.isFinite(parsed)
-      ? Math.max(1, Math.min(90, Math.floor(parsed)))
-      : 30;
+      ? Math.max(
+          1,
+          Math.min(365, Math.floor(parsed)),
+        )
+      : 90;
 
-    return this.zendesk.satisfaction(payload.workspaceId, days);
+    return this.zendesk.satisfaction(
+      payload.workspaceId,
+      days,
+    );
   }
 
   @Get('forms')
@@ -98,6 +162,9 @@ export class ZendeskController {
     @Headers('authorization') header?: string,
   ) {
     const payload = this.access(header);
-    return this.zendesk.ticket(payload.workspaceId, id);
+    return this.zendesk.ticket(
+      payload.workspaceId,
+      id,
+    );
   }
 }

@@ -1,4 +1,7 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, {
+  useMemo,
+  useState,
+} from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,10 +10,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import {
   router,
   type Href,
 } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
@@ -19,12 +24,20 @@ import { useAuth } from '@/context/AuthContext';
 export default function ProfileScreen() {
   const { session, signOut } = useAuth();
 
-  const [slaAlerts, setSlaAlerts] = useState(true);
-  const [priorityAlerts, setPriorityAlerts] =
+  const [slaAlerts, setSlaAlerts] =
     useState(true);
-  const [feedbackAlerts, setFeedbackAlerts] =
-    useState(true);
-  const [spikeAlerts, setSpikeAlerts] = useState(true);
+  const [
+    priorityAlerts,
+    setPriorityAlerts,
+  ] = useState(true);
+  const [
+    feedbackAlerts,
+    setFeedbackAlerts,
+  ] = useState(true);
+  const [
+    spikeAlerts,
+    setSpikeAlerts,
+  ] = useState(true);
 
   const workspace = useMemo(() => {
     const raw: any = session?.workspace;
@@ -55,149 +68,235 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.content}
+    <SafeAreaView
+      style={s.safe}
+      edges={['top', 'left', 'right']}
     >
-      <View style={s.topNav}>
+      <ScrollView
+        style={s.screen}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={s.topNav}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            style={({ pressed }) => [
+              s.back,
+              pressed && s.backPressed,
+            ]}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={23}
+              color={colors.text}
+            />
+          </Pressable>
+
+          <Text style={s.topTitle}>
+            Account
+          </Text>
+
+          <View style={s.topSpacer} />
+        </View>
+
+        <WorkspaceHeader safeTop={false} />
+
+        <AppCard style={s.profileCard}>
+          <View style={s.avatar}>
+            <Text style={s.avatarText}>
+              {String(
+                user?.displayName ||
+                  user?.name ||
+                  user?.email ||
+                  'M',
+              )
+                .slice(0, 1)
+                .toUpperCase()}
+            </Text>
+          </View>
+
+          <View style={s.identity}>
+            <Text style={s.name}>
+              {user?.displayName ||
+                user?.name ||
+                'Manager'}
+            </Text>
+
+            <Text
+              style={s.email}
+              numberOfLines={1}
+            >
+              {user?.email ||
+                'Manager account'}
+            </Text>
+
+            <View style={s.managerBadge}>
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={13}
+                color={colors.cyan}
+              />
+              <Text
+                style={
+                  s.managerBadgeText
+                }
+              >
+                MANAGER · READ ONLY
+              </Text>
+            </View>
+          </View>
+        </AppCard>
+
+        <SectionLabel
+          title="Workspace"
+        />
+
+        <AppCard style={s.infoCard}>
+          <InfoRow
+            label="Workspace"
+            value={workspace.name}
+          />
+          <InfoRow
+            label="Workspace ID"
+            value={workspace.slug}
+          />
+          <InfoRow
+            label="Data source"
+            value="Zendesk"
+          />
+          <InfoRow
+            label="Mode"
+            value="Read only"
+            last
+          />
+        </AppCard>
+
+        <SectionLabel
+          title="Notifications"
+          caption="Manager alert preferences on this device"
+        />
+
+        <AppCard style={s.infoCard}>
+          <ToggleRow
+            label="SLA / stale activity"
+            caption="Operational risk and no-recent-activity signals"
+            value={slaAlerts}
+            onValueChange={setSlaAlerts}
+          />
+
+          <ToggleRow
+            label="High priority"
+            caption="High and urgent ticket visibility"
+            value={priorityAlerts}
+            onValueChange={
+              setPriorityAlerts
+            }
+          />
+
+          <ToggleRow
+            label="Bad feedback"
+            caption="Negative CSAT signals"
+            value={feedbackAlerts}
+            onValueChange={
+              setFeedbackAlerts
+            }
+          />
+
+          <ToggleRow
+            label="Volume spikes"
+            caption="Product, region and form concentration"
+            value={spikeAlerts}
+            onValueChange={setSpikeAlerts}
+            last
+          />
+        </AppCard>
+
+        <SectionLabel title="System" />
+
         <Pressable
-          onPress={() => router.back()}
-          style={s.back}
+          onPress={openHealth}
+          style={({ pressed }) =>
+            pressed
+              ? { opacity: 0.82 }
+              : undefined
+          }
         >
-          <Text style={s.backText}>â€¹</Text>
+          <AppCard style={s.systemCard}>
+            <View style={s.systemIcon}>
+              <Ionicons
+                name="pulse-outline"
+                size={22}
+                color={colors.primary}
+              />
+            </View>
+
+            <View style={s.systemText}>
+              <Text style={s.systemTitle}>
+                System Health
+              </Text>
+              <Text
+                style={s.systemCaption}
+              >
+                Backend, database,
+                session and Zendesk
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={colors.cyan}
+            />
+          </AppCard>
         </Pressable>
 
-        <Text style={s.topTitle}>Account</Text>
-        <View style={s.topSpacer} />
-      </View>
-
-      <WorkspaceHeader />
-
-      <AppCard style={s.profileCard}>
-        <View style={s.avatar}>
-          <Text style={s.avatarText}>
-            {String(
-              user?.displayName ||
-                user?.name ||
-                user?.email ||
-                'M',
-            )
-              .slice(0, 1)
-              .toUpperCase()}
+        <Pressable
+          onPress={handleSignOut}
+          style={({ pressed }) => [
+            s.logoutButton,
+            pressed && {
+              opacity: 0.8,
+            },
+          ]}
+        >
+          <Ionicons
+            name="log-out-outline"
+            size={19}
+            color={colors.danger}
+          />
+          <Text style={s.logoutText}>
+            Log out
           </Text>
-        </View>
+        </Pressable>
 
-        <View style={s.identity}>
-          <Text style={s.name}>
-            {user?.displayName ||
-              user?.name ||
-              'Manager'}
-          </Text>
-          <Text style={s.email}>
-            {user?.email || 'Manager account'}
-          </Text>
+        <Text style={s.footer}>
+          Support Command Center
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
 
-          <View style={s.managerBadge}>
-            <Text style={s.managerBadgeText}>
-              MANAGER â€¢ READ ONLY
-            </Text>
-          </View>
-        </View>
-      </AppCard>
-
+function SectionLabel({
+  title,
+  caption,
+}: {
+  title: string;
+  caption?: string;
+}) {
+  return (
+    <View style={s.sectionHeader}>
       <Text style={s.sectionTitle}>
-        Workspace
+        {title}
       </Text>
 
-      <AppCard>
-        <InfoRow
-          label="Workspace"
-          value={workspace.name}
-        />
-        <InfoRow
-          label="Workspace ID"
-          value={workspace.slug}
-        />
-        <InfoRow
-          label="Data source"
-          value="Zendesk"
-        />
-        <InfoRow
-          label="Mode"
-          value="Read only"
-          last
-        />
-      </AppCard>
-
-      <Text style={s.sectionTitle}>
-        Notifications
-      </Text>
-      <Text style={s.sectionCaption}>
-        Local manager preferences for the alert experience
-      </Text>
-
-      <AppCard>
-        <ToggleRow
-          label="SLA / stale activity"
-          caption="Operational risk and no-recent-activity signals"
-          value={slaAlerts}
-          onValueChange={setSlaAlerts}
-        />
-        <ToggleRow
-          label="High priority"
-          caption="High and urgent ticket visibility"
-          value={priorityAlerts}
-          onValueChange={setPriorityAlerts}
-        />
-        <ToggleRow
-          label="Bad feedback"
-          caption="Negative CSAT signals"
-          value={feedbackAlerts}
-          onValueChange={setFeedbackAlerts}
-        />
-        <ToggleRow
-          label="Volume spikes"
-          caption="Device, region and form concentration"
-          value={spikeAlerts}
-          onValueChange={setSpikeAlerts}
-          last
-        />
-      </AppCard>
-
-      <Text style={s.sectionTitle}>
-        System
-      </Text>
-
-      <Pressable onPress={openHealth}>
-        <AppCard style={s.systemCard}>
-          <View style={s.systemIcon}>
-            <Text style={s.systemIconText}>H</Text>
-          </View>
-
-          <View style={s.systemText}>
-            <Text style={s.systemTitle}>
-              System Health
-            </Text>
-            <Text style={s.systemCaption}>
-              Backend, database, session and Zendesk status
-            </Text>
-          </View>
-
-          <Text style={s.chevron}>â€º</Text>
-        </AppCard>
-      </Pressable>
-
-      <Pressable
-        onPress={handleSignOut}
-        style={s.logoutButton}
-      >
-        <Text style={s.logoutText}>Log out</Text>
-      </Pressable>
-
-      <Text style={s.footer}>
-        Support Command Center â€¢ manager read-only experience
-      </Text>
-    </ScrollView>
+      {caption ? (
+        <Text style={s.sectionCaption}>
+          {caption}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -217,8 +316,15 @@ function InfoRow({
         last && s.lastRow,
       ]}
     >
-      <Text style={s.infoLabel}>{label}</Text>
-      <Text style={s.infoValue}>{value}</Text>
+      <Text style={s.infoLabel}>
+        {label}
+      </Text>
+      <Text
+        style={s.infoValue}
+        numberOfLines={2}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
@@ -233,7 +339,9 @@ function ToggleRow({
   label: string;
   caption: string;
   value: boolean;
-  onValueChange: (value: boolean) => void;
+  onValueChange: (
+    value: boolean,
+  ) => void;
   last?: boolean;
 }) {
   return (
@@ -260,7 +368,9 @@ function ToggleRow({
           true: colors.primarySoft,
         }}
         thumbColor={
-          value ? colors.primary : '#ffffff'
+          value
+            ? colors.primary
+            : '#FFFFFF'
         }
       />
     </View>
@@ -268,106 +378,119 @@ function ToggleRow({
 }
 
 const s = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
-    paddingTop: 22,
-    paddingBottom: 80,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 110,
   },
   topNav: {
+    minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 10,
   },
   back: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: {
-    color: colors.text,
-    fontSize: 34,
-    lineHeight: 36,
-    marginTop: -3,
+  backPressed: {
+    backgroundColor: colors.primarySoft,
   },
   topTitle: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
+    letterSpacing: -0.2,
   },
   topSpacer: {
-    width: 44,
+    width: 42,
   },
   profileCard: {
-    marginTop: 12,
+    marginTop: 3,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 18,
   },
   avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 19,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: colors.primary,
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
   },
   identity: {
-    marginLeft: 14,
+    marginLeft: 15,
     flex: 1,
   },
   name: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
   },
   email: {
     color: colors.muted,
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 5,
   },
   managerBadge: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: colors.cyanSoft,
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    marginTop: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    marginTop: 10,
   },
   managerBadgeText: {
     color: colors.cyan,
     fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.45,
+  },
+  sectionHeader: {
+    marginTop: 24,
+    marginBottom: 10,
   },
   sectionTitle: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
-    marginTop: 22,
-    marginBottom: 9,
   },
   sectionCaption: {
     color: colors.muted,
     fontSize: 10,
-    marginTop: -4,
-    marginBottom: 9,
+    lineHeight: 14,
+    marginTop: 4,
+  },
+  infoCard: {
+    paddingHorizontal: 16,
+    paddingVertical: 3,
   },
   infoRow: {
-    minHeight: 48,
+    minHeight: 52,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     flexDirection: 'row',
@@ -391,7 +514,7 @@ const s = StyleSheet.create({
     flex: 1,
   },
   toggleRow: {
-    minHeight: 70,
+    minHeight: 76,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     flexDirection: 'row',
@@ -416,18 +539,15 @@ const s = StyleSheet.create({
   systemCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
   },
   systemIcon: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  systemIconText: {
-    color: colors.primary,
-    fontWeight: '900',
   },
   systemText: {
     flex: 1,
@@ -444,17 +564,15 @@ const s = StyleSheet.create({
     lineHeight: 14,
     marginTop: 4,
   },
-  chevron: {
-    color: colors.cyan,
-    fontSize: 24,
-  },
   logoutButton: {
     marginTop: 24,
-    minHeight: 52,
+    minHeight: 54,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#F1CFCF',
     backgroundColor: '#FFF7F7',
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -467,7 +585,6 @@ const s = StyleSheet.create({
     color: colors.muted,
     fontSize: 9,
     textAlign: 'center',
-    marginTop: 18,
+    marginTop: 20,
   },
 });
-

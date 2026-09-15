@@ -4,15 +4,6 @@ import type {
   ZendeskTicketField,
 } from '@/lib/api';
 
-export type TicketDimensions = {
-  region: string;
-  device: string;
-  issue: string;
-  form: string;
-};
-
-type FieldRole = 'region' | 'device' | 'issue';
-
 function normalize(value: unknown) {
   return String(value ?? '')
     .trim()
@@ -21,60 +12,125 @@ function normalize(value: unknown) {
     .replace(/\s+/g, ' ');
 }
 
-function roleScore(
+export function fieldValue(
+  ticket: ZendeskTicket,
   field: ZendeskTicketField,
-  role: FieldRole,
 ) {
-  const title = normalize(
-    `${field.title} ${field.raw_title || ''} ${field.description || ''}`,
+  const raw =
+    ticket.custom_fields?.find(
+      (item) =>
+        item.id === field.id,
+    )?.value;
+
+  if (
+    raw === null ||
+    raw === undefined ||
+    raw === ''
+  ) {
+    return '';
+  }
+
+  const values = Array.isArray(raw)
+    ? raw
+    : [raw];
+
+  return values
+    .map((value) => {
+      const stringValue =
+        String(value);
+
+      const option =
+        field.custom_field_options?.find(
+          (item) =>
+            item.value ===
+            stringValue,
+        );
+
+      return (
+        option?.name ||
+        option?.raw_name ||
+        stringValue.replace(
+          /_/g,
+          ' ',
+        )
+      );
+    })
+    .join(', ');
+}
+
+type Role =
+  | 'region'
+  | 'product'
+  | 'issue';
+
+const ROLE_TERMS: Record<
+  Role,
+  string[]
+> = {
+  region: [
+    'region',
+    'territory',
+    'market',
+    'country',
+    'geo',
+  ],
+  product: [
+    'atomos product',
+    'product 1',
+    'product',
+    'device',
+    'device model',
+    'model',
+    'hardware',
+    'monitor',
+    'recorder',
+  ],
+  issue: [
+    'issue category',
+    'issue',
+    'fault',
+    'problem',
+    'symptom',
+    'failure',
+    'rma type',
+    'case type',
+    'reason',
+  ],
+};
+
+function score(
+  field: ZendeskTicketField,
+  role: Role,
+) {
+  const haystack = normalize(
+    `${field.title || ''} ${
+      field.raw_title || ''
+    } ${field.description || ''}`,
   );
 
-  const needles: Record<FieldRole, string[]> = {
-    region: [
-      'region',
-      'territory',
-      'market',
-      'geo',
-      'country region',
-      'sales region',
-    ],
-    device: [
-      'device',
-      'product',
-      'model',
-      'hardware',
-      'unit',
-      'product name',
-    ],
-    issue: [
-      'issue',
-      'fault',
-      'problem',
-      'symptom',
-      'failure',
-      'rma type',
-      'case type',
-      'issue category',
-      'problem type',
-    ],
-  };
-
-  return needles[role].reduce(
-    (score, needle) =>
-      score + (title.includes(needle) ? 1 : 0),
+  return ROLE_TERMS[role].reduce(
+    (total, term, index) =>
+      total +
+      (haystack.includes(term)
+        ? ROLE_TERMS[role].length -
+          index
+        : 0),
     0,
   );
 }
 
-export function detectField(
+export function candidateFields(
   fields: ZendeskTicketField[],
-  role: FieldRole,
+  role: Role,
 ) {
-  return [...fields]
-    .filter((field) => field.active !== false)
+  return fields
+    .filter(
+      (field) =>
+        field.active !== false,
+    )
     .map((field) => ({
       field,
-      score: roleScore(field, role),
+      score: score(field, role),
     }))
     .filter((row) => row.score > 0)
     .sort(
@@ -82,105 +138,58 @@ export function detectField(
         b.score - a.score ||
         (a.field.position ?? 9999) -
           (b.field.position ?? 9999),
-    )[0]?.field;
+    )
+    .map((row) => row.field);
 }
 
-function fieldValue(
+function firstValue(
   ticket: ZendeskTicket,
-  field?: ZendeskTicketField,
+  fields: ZendeskTicketField[],
+  role: Role,
 ) {
-  if (!field) return '';
+  for (const field of candidateFields(
+    fields,
+    role,
+  )) {
+    const value =
+      fieldValue(ticket, field);
 
-  const raw = ticket.custom_fields?.find(
-    (item) => item.id === field.id,
-  )?.value;
-
-  if (raw === null || raw === undefined || raw === '') {
-    return '';
+    if (value) return value;
   }
 
-  if (Array.isArray(raw)) {
-    return raw.join(', ');
-  }
-
-  const rawText = String(raw);
-
-  const option = field.custom_field_options?.find(
-    (item) => item.value === rawText,
-  );
-
-  return (
-    option?.name ||
-    option?.raw_name ||
-    rawText.replace(/_/g, ' ')
-  );
-}
-
-export function normalizeRegion(value: string) {
-  const raw = normalize(value);
-
-  if (!raw) return 'Other';
-
-  if (
-    raw.includes('emea') ||
-    raw.includes('middle east') ||
-    raw.includes('africa') ||
-    raw === 'me'
-  ) {
-    return 'EMEA';
-  }
-
-  if (
-    raw.includes('europe') ||
-    raw === 'eu' ||
-    raw.includes('united kingdom') ||
-    raw === 'uk'
-  ) {
-    return 'Europe';
-  }
-
-  if (
-    raw === 'us' ||
-    raw === 'usa' ||
-    raw.includes('united states') ||
-    raw.includes('north america')
-  ) {
-    return 'US';
-  }
-
-  if (
-    raw.includes('apac') ||
-    raw.includes('asia pacific') ||
-    raw.includes('asia') ||
-    raw.includes('australia')
-  ) {
-    return 'APAC';
-  }
-
-  return value.trim() || 'Other';
+  return '';
 }
 
 export function dimensionsForTicket(
   ticket: ZendeskTicket,
   fields: ZendeskTicketField[],
   forms: ZendeskForm[],
-): TicketDimensions {
-  const regionField = detectField(fields, 'region');
-  const deviceField = detectField(fields, 'device');
-  const issueField = detectField(fields, 'issue');
-
+) {
   const form = forms.find(
-    (item) => item.id === ticket.ticket_form_id,
+    (item) =>
+      item.id ===
+      ticket.ticket_form_id,
   );
 
   return {
-    region: normalizeRegion(
-      fieldValue(ticket, regionField),
-    ),
+    region:
+      firstValue(
+        ticket,
+        fields,
+        'region',
+      ) || 'Other',
     device:
-      fieldValue(ticket, deviceField) || 'Unknown device',
+      firstValue(
+        ticket,
+        fields,
+        'product',
+      ) || 'Unknown product',
     issue:
-      fieldValue(ticket, issueField) || 'Uncategorized',
+      firstValue(
+        ticket,
+        fields,
+        'issue',
+      ) || 'Uncategorized',
     form:
       form?.display_name ||
       form?.name ||
@@ -194,8 +203,56 @@ export function detectedMapping(
   fields: ZendeskTicketField[],
 ) {
   return {
-    region: detectField(fields, 'region'),
-    device: detectField(fields, 'device'),
-    issue: detectField(fields, 'issue'),
+    region:
+      candidateFields(
+        fields,
+        'region',
+      )[0],
+    device:
+      candidateFields(
+        fields,
+        'product',
+      )[0],
+    issue:
+      candidateFields(
+        fields,
+        'issue',
+      )[0],
+    productCandidates:
+      candidateFields(
+        fields,
+        'product',
+      ),
   };
+}
+
+export function allProductOptions(
+  fields: ZendeskTicketField[],
+) {
+  const seen = new Set<string>();
+  const values: string[] = [];
+
+  for (const field of candidateFields(
+    fields,
+    'product',
+  ).slice(0, 3)) {
+    for (const option of
+      field.custom_field_options ||
+      []) {
+      const label =
+        option.name ||
+        option.raw_name ||
+        option.value;
+
+      const key =
+        label.toLowerCase();
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        values.push(label);
+      }
+    }
+  }
+
+  return values;
 }

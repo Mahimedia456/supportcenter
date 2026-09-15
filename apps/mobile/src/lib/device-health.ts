@@ -4,6 +4,7 @@ import type {
   ZendeskTicketField,
 } from '@/lib/api';
 import {
+  allProductOptions,
   dimensionsForTicket,
 } from '@/lib/zendesk-dimensions';
 
@@ -21,18 +22,33 @@ export type DeviceHealthRow = {
 };
 
 function lower(value: unknown) {
-  return String(value ?? '').trim().toLowerCase();
+  return String(value ?? '')
+    .trim()
+    .toLowerCase();
 }
 
-function isOpen(ticket: ZendeskTicket) {
-  return ['new', 'open'].includes(lower(ticket.status));
+function isOpen(
+  ticket: ZendeskTicket,
+) {
+  return [
+    'new',
+    'open',
+    'pending',
+  ].includes(lower(ticket.status));
 }
 
-function isHigh(ticket: ZendeskTicket) {
-  return ['high', 'urgent'].includes(lower(ticket.priority));
+function isHigh(
+  ticket: ZendeskTicket,
+) {
+  return [
+    'high',
+    'urgent',
+  ].includes(lower(ticket.priority));
 }
 
-function ticketText(ticket: ZendeskTicket) {
+function text(
+  ticket: ZendeskTicket,
+) {
   return [
     ticket.subject || '',
     ticket.description || '',
@@ -47,21 +63,28 @@ export function isRmaTicket(
   fields: ZendeskTicketField[],
   forms: ZendeskForm[],
 ) {
-  const dimensions = dimensionsForTicket(ticket, fields, forms);
+  const dim =
+    dimensionsForTicket(
+      ticket,
+      fields,
+      forms,
+    );
 
   const haystack = [
-    dimensions.form,
-    dimensions.issue,
-    ticketText(ticket),
+    dim.form,
+    dim.issue,
+    text(ticket),
   ]
     .join(' ')
     .toLowerCase();
 
-  return (
-    haystack.includes('rma') ||
-    haystack.includes('return merchandise') ||
-    haystack.includes('return authorization') ||
-    haystack.includes('replacement')
+  return [
+    'rma',
+    'return merchandise',
+    'return authorization',
+    'replacement',
+  ].some((value) =>
+    haystack.includes(value),
   );
 }
 
@@ -70,16 +93,21 @@ export function isFaultyTicket(
   fields: ZendeskTicketField[],
   forms: ZendeskForm[],
 ) {
-  const dimensions = dimensionsForTicket(ticket, fields, forms);
+  const dim =
+    dimensionsForTicket(
+      ticket,
+      fields,
+      forms,
+    );
 
   const haystack = [
-    dimensions.issue,
-    ticketText(ticket),
+    dim.issue,
+    text(ticket),
   ]
     .join(' ')
     .toLowerCase();
 
-  const signals = [
+  return [
     'fault',
     'faulty',
     'failure',
@@ -95,17 +123,23 @@ export function isFaultyTicket(
     'display issue',
     'recording issue',
     'hdmi issue',
-  ];
-
-  return signals.some((signal) => haystack.includes(signal));
+  ].some((value) =>
+    haystack.includes(value),
+  );
 }
 
-function createdMs(ticket: ZendeskTicket) {
+function createdMs(
+  ticket: ZendeskTicket,
+) {
   const value = new Date(
-    ticket.created_at || ticket.updated_at || 0,
+    ticket.created_at ||
+      ticket.updated_at ||
+      0,
   ).getTime();
 
-  return Number.isFinite(value) ? value : 0;
+  return Number.isFinite(value)
+    ? value
+    : 0;
 }
 
 export function buildDeviceHealth(
@@ -114,25 +148,57 @@ export function buildDeviceHealth(
   forms: ZendeskForm[],
 ) {
   const now = Date.now();
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
-  const map = new Map<string, DeviceHealthRow>();
+  const sevenDays =
+    7 * 24 * 60 * 60 * 1000;
+
+  const map = new Map<
+    string,
+    DeviceHealthRow
+  >();
+
+  // Seed from actual Zendesk dropdown
+  // options so Atomos products still
+  // appear even when a product has zero
+  // tickets in the selected period.
+  for (const product of
+    allProductOptions(fields)) {
+    map.set(product.toLowerCase(), {
+      device: product,
+      total: 0,
+      open: 0,
+      high: 0,
+      unassigned: 0,
+      rma: 0,
+      faulty: 0,
+      last7Days: 0,
+      previous7Days: 0,
+      trendPct: null,
+    });
+  }
 
   for (const ticket of tickets) {
-    const dimensions = dimensionsForTicket(ticket, fields, forms);
-    const device = dimensions.device || 'Unknown device';
+    const dim =
+      dimensionsForTicket(
+        ticket,
+        fields,
+        forms,
+      );
+
+    const device = dim.device;
 
     if (
       !device ||
-      device.toLowerCase() === 'unknown device'
+      device.toLowerCase() ===
+        'unknown product'
     ) {
       continue;
     }
 
-    const key = device.toLowerCase();
+    const key =
+      device.toLowerCase();
 
     const row =
-      map.get(key) ||
-      {
+      map.get(key) || {
         device,
         total: 0,
         open: 0,
@@ -146,17 +212,41 @@ export function buildDeviceHealth(
       };
 
     row.total += 1;
-    row.open += isOpen(ticket) ? 1 : 0;
-    row.high += isHigh(ticket) ? 1 : 0;
-    row.unassigned += ticket.assignee_id ? 0 : 1;
-    row.rma += isRmaTicket(ticket, fields, forms) ? 1 : 0;
-    row.faulty += isFaultyTicket(ticket, fields, forms) ? 1 : 0;
+    row.open +=
+      isOpen(ticket) ? 1 : 0;
+    row.high +=
+      isHigh(ticket) ? 1 : 0;
+    row.unassigned +=
+      ticket.assignee_id ? 0 : 1;
+    row.rma +=
+      isRmaTicket(
+        ticket,
+        fields,
+        forms,
+      )
+        ? 1
+        : 0;
+    row.faulty +=
+      isFaultyTicket(
+        ticket,
+        fields,
+        forms,
+      )
+        ? 1
+        : 0;
 
-    const age = now - createdMs(ticket);
+    const age =
+      now - createdMs(ticket);
 
-    if (age >= 0 && age < sevenDays) {
+    if (
+      age >= 0 &&
+      age < sevenDays
+    ) {
       row.last7Days += 1;
-    } else if (age >= sevenDays && age < sevenDays * 2) {
+    } else if (
+      age >= sevenDays &&
+      age < sevenDays * 2
+    ) {
       row.previous7Days += 1;
     }
 
@@ -172,7 +262,8 @@ export function buildDeviceHealth(
             ? 100
             : null
           : Math.round(
-              ((row.last7Days - row.previous7Days) /
+              ((row.last7Days -
+                row.previous7Days) /
                 row.previous7Days) *
                 100,
             ),
@@ -180,8 +271,9 @@ export function buildDeviceHealth(
     .sort(
       (a, b) =>
         b.total - a.total ||
-        b.faulty - a.faulty ||
-        a.device.localeCompare(b.device),
+        a.device.localeCompare(
+          b.device,
+        ),
     );
 }
 
@@ -191,13 +283,15 @@ export function deviceTickets(
   forms: ZendeskForm[],
   device: string,
 ) {
-  return tickets.filter((ticket) => {
-    const dimensions = dimensionsForTicket(ticket, fields, forms);
-    return (
-      dimensions.device.toLowerCase() ===
-      device.toLowerCase()
-    );
-  });
+  return tickets.filter(
+    (ticket) =>
+      dimensionsForTicket(
+        ticket,
+        fields,
+        forms,
+      ).device.toLowerCase() ===
+      device.toLowerCase(),
+  );
 }
 
 export function topIssuesForDevice(
@@ -206,24 +300,37 @@ export function topIssuesForDevice(
   forms: ZendeskForm[],
   device: string,
 ) {
-  const map = new Map<string, number>();
+  const map =
+    new Map<string, number>();
 
-  for (const ticket of deviceTickets(
-    tickets,
-    fields,
-    forms,
-    device,
-  )) {
+  for (const ticket of
+    deviceTickets(
+      tickets,
+      fields,
+      forms,
+      device,
+    )) {
     const issue =
-      dimensionsForTicket(ticket, fields, forms).issue ||
-      'Uncategorized';
+      dimensionsForTicket(
+        ticket,
+        fields,
+        forms,
+      ).issue;
 
-    map.set(issue, (map.get(issue) || 0) + 1);
+    map.set(
+      issue,
+      (map.get(issue) || 0) + 1,
+    );
   }
 
   return [...map.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
+    .map(([label, count]) => ({
+      label,
+      count,
+    }))
+    .sort(
+      (a, b) => b.count - a.count,
+    );
 }
 
 export function regionsForDevice(
@@ -232,22 +339,35 @@ export function regionsForDevice(
   forms: ZendeskForm[],
   device: string,
 ) {
-  const map = new Map<string, number>();
+  const map =
+    new Map<string, number>();
 
-  for (const ticket of deviceTickets(
-    tickets,
-    fields,
-    forms,
-    device,
-  )) {
+  for (const ticket of
+    deviceTickets(
+      tickets,
+      fields,
+      forms,
+      device,
+    )) {
     const region =
-      dimensionsForTicket(ticket, fields, forms).region ||
-      'Other';
+      dimensionsForTicket(
+        ticket,
+        fields,
+        forms,
+      ).region;
 
-    map.set(region, (map.get(region) || 0) + 1);
+    map.set(
+      region,
+      (map.get(region) || 0) + 1,
+    );
   }
 
   return [...map.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
+    .map(([label, count]) => ({
+      label,
+      count,
+    }))
+    .sort(
+      (a, b) => b.count - a.count,
+    );
 }

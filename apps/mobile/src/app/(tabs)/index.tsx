@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
+import { OverviewDateFilter } from '@/components/overview/OverviewDateFilter';
 import { AppCard } from '@/components/AppCard';
 import { MetricCard } from '@/components/overview/MetricCard';
 import { colors } from '@/constants/theme';
@@ -18,6 +19,7 @@ import * as api from '@/lib/api';
 import {
   overviewMetrics,
   ticketsForPeriod,
+  ticketsForDateRange,
   type OverviewPeriod,
 } from '@/lib/overview';
 
@@ -32,30 +34,86 @@ export default function Overview() {
   const [tickets, setTickets] = useState<api.ZendeskTicket[]>([]);
   const [health, setHealth] = useState<api.ZendeskHealth | null>(null);
   const [period, setPeriod] = useState<OverviewPeriod>('7d');
+  const [customFrom, setCustomFrom] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
+  const [customTo, setCustomTo] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
-    const fresh = await ensureFreshSession();
-    const token = fresh?.accessToken || session?.accessToken;
-    if (!token) return;
+
+    const fresh =
+      await ensureFreshSession();
+    const token =
+      fresh?.accessToken ||
+      session?.accessToken;
+
+    if (!token) {
+      setLoading(false);
+      setError(
+        'Manager session is unavailable. Please sign in again.',
+      );
+      return;
+    }
+
+    let hasTickets = false;
+    let recentError: unknown = null;
 
     try {
-      const [ticketResult, healthResult] = await Promise.all([
-        api.zendeskRecentTickets(token),
-        api.zendeskHealth(token),
-      ]);
+      // Fast first paint: recent ticket endpoint was already
+      // stable before the 90-day analytics phase.
+      const recentResult =
+        await api.zendeskRecentTickets(
+          token,
+        );
 
-      setTickets(ticketResult.tickets || []);
-      setHealth(healthResult);
-    } catch (e: any) {
-      setError(e?.message || 'Unable to load overview.');
+      setTickets(
+        recentResult.tickets || [],
+      );
+      hasTickets = true;
+      setLoading(false);
+    } catch (e) {
+      recentError = e;
+    }
+
+    // Health must never block Overview ticket metrics.
+    void api
+      .zendeskHealth(token)
+      .then(setHealth)
+      .catch(() => setHealth(null));
+
+    try {
+      // Upgrade the screen with a larger dataset in the
+      // background. If this endpoint fails, keep recent data.
+      const analyticsResult =
+        await api.zendeskAllTickets(
+          token,
+        );
+
+      setTickets(
+        analyticsResult.tickets || [],
+      );
+      hasTickets = true;
+      setError('');
+    } catch (analyticsError: any) {
+      if (!hasTickets) {
+        const fallbackError: any =
+          recentError ||
+          analyticsError;
+
+        setError(
+          fallbackError?.message ||
+            'Unable to load overview ticket data.',
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [ensureFreshSession, session?.accessToken]);
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     void load();
@@ -68,8 +126,8 @@ export default function Overview() {
   }
 
   const periodTickets = useMemo(
-    () => ticketsForPeriod(tickets, period),
-    [period, tickets],
+    () => period === 'custom' ? ticketsForDateRange(tickets, customFrom, customTo) : ticketsForPeriod(tickets, period),
+    [period, tickets, customFrom, customTo],
   );
 
   const metrics = useMemo(
@@ -108,7 +166,7 @@ export default function Overview() {
           <Text style={s.eyebrow}>MANAGER OVERVIEW</Text>
           <Text style={s.title}>Support at a glance</Text>
           <Text style={s.caption}>
-            {health?.ok ? 'Live Zendesk snapshot' : 'Workspace snapshot'}
+            {period === 'custom' ? `${customFrom.toLocaleDateString()} — ${customTo.toLocaleDateString()}` : health?.ok ? 'Live Zendesk snapshot' : 'Workspace snapshot'}
           </Text>
         </View>
 
@@ -118,19 +176,13 @@ export default function Overview() {
         </View>
       </View>
 
-      <View style={s.periodTabs}>
-        {PERIODS.map((item) => (
-          <Pressable
-            key={item.key}
-            onPress={() => setPeriod(item.key)}
-            style={[s.periodTab, period === item.key && s.periodTabActive]}
-          >
-            <Text style={[s.periodText, period === item.key && s.periodTextActive]}>
-              {item.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <OverviewDateFilter
+        period={period}
+        from={customFrom}
+        to={customTo}
+        onPreset={(next) => setPeriod(next)}
+        onCustom={(from, to) => { setCustomFrom(from); setCustomTo(to); setPeriod('custom'); }}
+      />
 
       {error ? (
         <AppCard style={s.errorCard}>
