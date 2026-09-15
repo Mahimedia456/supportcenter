@@ -58,7 +58,16 @@ async function request<T>(
   while (attempt <= retries) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      const requestTimeoutMs =
+        path.startsWith('/auth/')
+          ? 45_000
+          : 30_000;
+
+      const timeout = setTimeout(
+        () => controller.abort(),
+        requestTimeoutMs,
+      );
 
       let response: Response;
 
@@ -114,8 +123,17 @@ async function request<T>(
       }
 
       return body as T;
-    } catch (error) {
-      lastError = error;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        lastError = new ApiError(
+          'Request timed out. Check the backend URL and network connection.',
+          408,
+        );
+      } else {
+        lastError = error;
+      }
+
+      error = lastError;
 
       if (
         error instanceof ApiError &&

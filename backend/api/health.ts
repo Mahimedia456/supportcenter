@@ -5,7 +5,7 @@ export default function handler(
   return res.status(200).json({
     ok: true,
     service: 'Support Command Center API',
-    environment: process.env.VERCEL ? 'vercel' : 'serverless',
+    environment: 'vercel',
     timestamp: new Date().toISOString(),
   });
 }

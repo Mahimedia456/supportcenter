@@ -10,11 +10,11 @@
       "destination": "/api/health"
     },
     {
-      "source": "/auth/(.*)",
+      "source": "/auth/:path*",
       "destination": "/api/index"
     },
     {
-      "source": "/zendesk/(.*)",
+      "source": "/zendesk/:path*",
       "destination": "/api/index"
     }
   ]

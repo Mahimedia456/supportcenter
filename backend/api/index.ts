@@ -9,12 +9,6 @@ const server = express();
 
 server.set('trust proxy', 1);
 
-/**
- * Vercel compatibility:
- * - mobile should use base URL WITHOUT /api
- * - but if /api is accidentally included, strip it before Nest routing
- * - root URL resolves to /health for easy browser testing
- */
 server.use((req, _res, next) => {
   if (req.url === '/' || req.url === '') {
     req.url = '/health';
@@ -36,10 +30,7 @@ async function bootstrap() {
         AppModule,
         new ExpressAdapter(server),
         {
-          logger:
-            process.env.NODE_ENV === 'production'
-              ? ['error', 'warn', 'log']
-              : ['error', 'warn', 'log', 'debug'],
+          logger: ['error', 'warn', 'log'],
         },
       );
 
@@ -73,19 +64,19 @@ export default async function handler(
 ) {
   try {
     await bootstrap();
-
     return server(req, res);
   } catch (error: any) {
     console.error(
-      'Vercel bootstrap failed:',
+      'Vercel Nest bootstrap failed:',
       error?.stack || error,
     );
 
     if (!res.headersSent) {
-      res.status(500).json({
+      return res.status(500).json({
         ok: false,
         service: 'Support Command Center API',
         error: 'Backend bootstrap failed',
+        errorCode: 'NEST_BOOTSTRAP_FAILED',
       });
     }
   }
