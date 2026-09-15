@@ -1,0 +1,3 @@
+import React from 'react';import { StyleSheet,Text,View } from 'react-native';import { AppCard } from './AppCard';import { colors } from '@/constants/theme';
+export function MetricCard({label,value,delta,tone='good'}:{label:string;value:string|number;delta?:string;tone?:'good'|'bad'|'warn'}){return <AppCard style={s.card}><Text style={s.label}>{label}</Text><Text style={s.value}>{value}</Text>{delta?<Text style={[s.delta,{color:tone==='bad'?colors.danger:tone==='warn'?colors.warning:colors.success}]}>{delta}</Text>:null}</AppCard>}
+const s=StyleSheet.create({card:{width:'48%',minHeight:105},label:{fontSize:12,color:colors.muted},value:{fontSize:28,fontWeight:'900',color:colors.text,marginTop:8},delta:{fontSize:12,fontWeight:'700',marginTop:7}});

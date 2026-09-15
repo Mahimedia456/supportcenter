@@ -1,0 +1,3 @@
+import React from 'react';import { Redirect,Slot,useSegments } from 'expo-router';import { ActivityIndicator,View } from 'react-native';import { AuthProvider,useAuth } from '@/context/AuthContext';import { colors } from '@/constants/theme';
+function Gate(){const {session,booting}=useAuth();const seg=useSegments();if(booting)return <View style={{flex:1,alignItems:'center',justifyContent:'center',backgroundColor:colors.background}}><ActivityIndicator color={colors.primary}/></View>;const inAuth=seg[0]==='(auth)';if(!session&&!inAuth)return <Redirect href="/(auth)/login"/>;if(session&&inAuth)return <Redirect href="/(tabs)"/>;return <Slot/>}
+export default function RootLayout(){return <AuthProvider><Gate/></AuthProvider>}

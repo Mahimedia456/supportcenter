@@ -1,0 +1,11 @@
+Support Command Center — Phase 02 package
+Target: E:\Supportcenter
+
+Merge this package into the project root.
+
+Main additions:
+apps/mobile/*
+backend/*
+
+Run installer from:
+E:\Supportcenter\apps\mobile\INSTALL-PHASE-02.ps1

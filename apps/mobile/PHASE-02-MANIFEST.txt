@@ -1,0 +1,31 @@
+Support Command Center — Phase 02
+=================================
+Mobile 0.2.0 + Backend Auth Foundation
+
+ADDED
+- Real mobile API client
+- SecureStore access + refresh session persistence
+- Session validation and automatic refresh
+- Real login endpoint integration
+- Dynamic workspace logo after login
+- Atomos workspace mark assets from supplied logo
+- AngelBird workspace mark assets from supplied logo
+- Full generic app icon asset set:
+  app icon, adaptive icon, monochrome adaptive icon,
+  notification icon, splash icon, App Store / Play Store / iOS / favicon previews
+
+BACKEND
+- NestJS auth/session foundation
+- PostgreSQL/Supabase schema
+- users, workspaces, workspace_members, refresh_sessions
+- Aamir -> AngelBird, Shahid -> Atomos workspace mapping via seed script
+- JWT access token + rotating refresh token
+- Health endpoint
+- Secure server env placeholders for both Zendesk instances
+
+NOT IN PHASE 02
+- Zendesk tickets/views/forms sync
+- Zendesk API credentials in mobile
+- Reply/update actions from mobile
+
+Those start in Phase 03.

@@ -1,0 +1,43 @@
+$ErrorActionPreference = "Stop"
+
+Write-Host "Support Command Center - Phase 08 Overview + Regions + Route Fix" -ForegroundColor Cyan
+Write-Host "Fixes Expo Router typed dynamic routes and adds manager overview/region drill-down"
+
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$Mobile = Join-Path $Root "apps\mobile"
+$Backend = Join-Path $Root "backend"
+
+Write-Host "Resolved root: $Root" -ForegroundColor DarkGray
+
+if (-not (Test-Path $Mobile)) { throw "Mobile path not found: $Mobile" }
+if (-not (Test-Path $Backend)) { throw "Backend path not found: $Backend" }
+
+function Run-Step([string]$Label, [scriptblock]$Command) {
+    Write-Host $Label -ForegroundColor Yellow
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed with exit code $LASTEXITCODE"
+    }
+}
+
+Run-Step "[1/3] Expo Router route generation check..." {
+    Set-Location $Mobile
+    npx expo customize tsconfig.json
+}
+
+Run-Step "[2/3] Mobile TypeScript check..." {
+    Set-Location $Mobile
+    npx tsc --noEmit
+}
+
+Run-Step "[3/3] Backend TypeScript check..." {
+    Set-Location $Backend
+    npx tsc --noEmit
+}
+
+Write-Host ""
+Write-Host "PASS: Phase 08 installed." -ForegroundColor Green
+Write-Host ""
+Write-Host "Run:"
+Write-Host "Terminal 1: cd E:\Supportcenter\backend ; npm run start:dev"
+Write-Host "Terminal 2: cd E:\Supportcenter\apps\mobile ; npx expo start -c"

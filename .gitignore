@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Expo / React Native
+.expo/
+**/.expo/
+dist/
+**/dist/
+build/
+**/build/
+android/.gradle/
+**/android/.gradle/
+ios/Pods/
+**/ios/Pods/
+
+# Secrets - NEVER COMMIT
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+!.env.vercel.example
+!**/.env.vercel.example
+
+# Logs / OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Vercel local state
+.vercel/
+**/.vercel/
+
+# Editor
+.vscode/
+.idea/
