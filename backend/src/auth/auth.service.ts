@@ -88,8 +88,8 @@ export class AuthService {
     const refresh = this.signRefresh(user);
 
     await this.db.query(
-      `insert into refresh_sessions
-        (user_id, token_hash, expires_at, created_at)
+      `insert into user_sessions
+        (user_id, refresh_token_hash, expires_at, created_at)
        values ($1, $2, $3, now())`,
       [user.id, this.hash(refresh.token), refresh.expiresAt],
     );
@@ -138,8 +138,8 @@ export class AuthService {
     const tokenHash = this.hash(refreshToken);
     const session = await this.db.query<{ id: string; revoked_at: Date | null; expires_at: Date }>(
       `select id, revoked_at, expires_at
-       from refresh_sessions
-       where user_id = $1 and token_hash = $2
+       from user_sessions
+       where user_id = $1 and refresh_token_hash = $2
        limit 1`,
       [payload.sub, tokenHash],
     );
@@ -149,7 +149,7 @@ export class AuthService {
       throw new UnauthorizedException('Session expired.');
     }
 
-    await this.db.query(`update refresh_sessions set revoked_at = now() where id = $1`, [row.id]);
+    await this.db.query(`update user_sessions set revoked_at = now() where id = $1`, [row.id]);
 
     const userResult = await this.db.query<UserRow>(
       `select id, email, display_name, password_hash, is_active from users where id = $1 limit 1`,
@@ -163,9 +163,9 @@ export class AuthService {
 
   async logout(refreshToken: string) {
     await this.db.query(
-      `update refresh_sessions
+      `update user_sessions
        set revoked_at = coalesce(revoked_at, now())
-       where token_hash = $1`,
+       where refresh_token_hash = $1`,
       [this.hash(refreshToken)],
     );
     return { ok: true };
