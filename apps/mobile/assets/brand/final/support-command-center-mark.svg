@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs>
+  <linearGradient id="hex" x1="80" y1="80" x2="430" y2="430" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#064E3B"/>
+    <stop offset="0.52" stop-color="#0A7B61"/>
+    <stop offset="1" stop-color="#12BFC6"/>
+  </linearGradient>
+  <linearGradient id="bar" x1="150" y1="335" x2="335" y2="180" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#11BFC7"/>
+    <stop offset="1" stop-color="#8BE21D"/>
+  </linearGradient>
+</defs>
+
+<!-- geometric command shield / hex -->
+<path fill="url(#hex)" d="M256 40 421 135v190L256 420 91 325V135L256 40Z"/>
+
+<!-- command C cut -->
+<path fill="#F7FCFA" d="M330 150c-23-18-51-28-82-28-76 0-137 61-137 137s61 137 137 137c31 0 59-10 82-28l-34-46c-13 9-29 15-48 15-43 0-78-35-78-78s35-78 78-78c19 0 35 6 48 15l34-46Z"/>
+
+<!-- analytics bars -->
+<rect x="210" y="265" width="30" height="68" rx="10" fill="url(#bar)"/>
+<rect x="252" y="230" width="30" height="103" rx="10" fill="url(#bar)"/>
+<rect x="294" y="190" width="30" height="143" rx="10" fill="url(#bar)"/>
+
+<!-- lime command accent -->
+<path d="M348 121c28 21 47 50 55 83" fill="none" stroke="#8BE21D" stroke-width="18" stroke-linecap="round"/>
+</svg>

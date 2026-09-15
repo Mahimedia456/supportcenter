@@ -7,6 +7,9 @@ import { AppModule } from '../src/app.module';
 
 const server = express();
 
+// trust proxy belongs to the underlying Express app, not INestApplication
+server.set('trust proxy', 1);
+
 let appPromise: Promise<INestApplication> | null = null;
 
 async function bootstrap() {
@@ -22,8 +25,6 @@ async function bootstrap() {
               : ['error', 'warn', 'log', 'debug'],
         },
       );
-
-      app.set('trust proxy', 1);
 
       const configuredOrigins = (
         process.env.CORS_ORIGINS || ''
@@ -50,8 +51,8 @@ async function bootstrap() {
 }
 
 export default async function handler(
-  req: any,
-  res: any,
+  req: express.Request,
+  res: express.Response,
 ) {
   try {
     await bootstrap();

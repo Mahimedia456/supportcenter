@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   useEffect,
   useRef,
   useState,
@@ -306,7 +306,11 @@ const s = StyleSheet.create({
     opacity: 1,
   },
   tint: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(247,252,250,0.08)',
   },
 
@@ -424,3 +428,5 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+
