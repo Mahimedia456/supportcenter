@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { WorkspaceService } from '../workspaces/workspace.service';
+import { ZendeskOAuthService } from './zendesk-oauth.service';
 
 type Slug = 'angelbird' | 'atomos';
 
@@ -17,9 +18,12 @@ type ZendeskConfig = {
 export class ZendeskService {
   constructor(
     private readonly workspaces: WorkspaceService,
+    private readonly oauth: ZendeskOAuthService,
   ) {}
 
-  private config(slug: Slug): ZendeskConfig {
+  private apiTokenConfig(
+    slug: Slug,
+  ): ZendeskConfig | null {
     const prefix =
       slug === 'angelbird'
         ? 'ANGELBIRD'
@@ -43,35 +47,17 @@ export class ZendeskService {
       ] || ''
     ).trim();
 
-    const oauthToken = (
-      process.env[
-        `${prefix}_ZENDESK_OAUTH_TOKEN`
-      ] || ''
-    ).trim();
-
     const subdomain = raw
       .replace(/^https?:\/\//i, '')
       .replace(/\.zendesk\.com.*$/i, '')
       .replace(/\/$/, '');
 
-    if (!subdomain) {
-      throw new NotFoundException(
-        `Zendesk subdomain is not configured for ${slug}.`,
-      );
-    }
-
-    if (oauthToken) {
-      return {
-        subdomain,
-        authHeader: `Bearer ${oauthToken}`,
-        authMode: 'oauth',
-      };
-    }
-
-    if (!email || !apiToken) {
-      throw new NotFoundException(
-        `Zendesk authentication is not configured for ${slug}.`,
-      );
+    if (
+      !subdomain ||
+      !email ||
+      !apiToken
+    ) {
+      return null;
     }
 
     const basic = Buffer.from(
@@ -83,6 +69,61 @@ export class ZendeskService {
       authHeader: `Basic ${basic}`,
       authMode: 'api_token',
     };
+  }
+
+  private subdomain(slug: Slug) {
+    const prefix =
+      slug === 'angelbird'
+        ? 'ANGELBIRD'
+        : 'ATOMOS';
+
+    return (
+      process.env[
+        `${prefix}_ZENDESK_SUBDOMAIN`
+      ] || ''
+    )
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\.zendesk\.com.*$/i, '')
+      .replace(/\/$/, '');
+  }
+
+  private async authorization(
+    slug: Slug,
+  ): Promise<ZendeskConfig> {
+    const subdomain =
+      this.subdomain(slug);
+
+    if (!subdomain) {
+      throw new NotFoundException(
+        `Zendesk subdomain is not configured for ${slug}.`,
+      );
+    }
+
+    const oauthToken =
+      await this.oauth.accessToken(
+        slug,
+      );
+
+    if (oauthToken) {
+      return {
+        subdomain,
+        authHeader:
+          `Bearer ${oauthToken}`,
+        authMode: 'oauth',
+      };
+    }
+
+    const fallback =
+      this.apiTokenConfig(slug);
+
+    if (fallback) {
+      return fallback;
+    }
+
+    throw new NotFoundException(
+      `Zendesk OAuth is not connected and API-token fallback is not configured for ${slug}.`,
+    );
   }
 
   private async slug(
@@ -115,7 +156,8 @@ export class ZendeskService {
   ) {
     const slug =
       await this.slug(workspaceId);
-    const config = this.config(slug);
+    const config =
+      await this.authorization(slug);
 
     const response = await fetch(
       `https://${config.subdomain}.zendesk.com${path}`,

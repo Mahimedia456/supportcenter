@@ -27,6 +27,7 @@ const PERIODS: Array<{ key: OverviewPeriod; label: string }> = [
   { key: 'today', label: 'Today' },
   { key: '7d', label: '7 Days' },
   { key: '30d', label: '30 Days' },
+  { key: 'all', label: 'All' },
 ];
 
 export default function Overview() {

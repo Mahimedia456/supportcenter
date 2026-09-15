@@ -5,5 +5,23 @@ import { DatabaseService } from './database/database.service';
 import { WorkspaceService } from './workspaces/workspace.service';
 import { HealthController } from './health.controller';
 import { ZendeskController } from './zendesk/zendesk.controller';
+import { ZendeskOAuthController } from './zendesk/zendesk-oauth.controller';
 import { ZendeskService } from './zendesk/zendesk.service';
-@Module({controllers:[HealthController,AuthController,ZendeskController],providers:[DatabaseService,WorkspaceService,AuthService,ZendeskService]}) export class AppModule{}
+import { ZendeskOAuthService } from './zendesk/zendesk-oauth.service';
+
+@Module({
+  controllers: [
+    HealthController,
+    AuthController,
+    ZendeskController,
+    ZendeskOAuthController,
+  ],
+  providers: [
+    DatabaseService,
+    WorkspaceService,
+    AuthService,
+    ZendeskOAuthService,
+    ZendeskService,
+  ],
+})
+export class AppModule {}

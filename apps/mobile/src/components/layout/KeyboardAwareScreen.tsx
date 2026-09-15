@@ -1,4 +1,6 @@
-import React, { PropsWithChildren } from 'react';
+import React, {
+  PropsWithChildren,
+} from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,22 +13,45 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export function KeyboardAwareScreen({
   children,
   contentStyle,
+  scrollRef,
 }: PropsWithChildren<{
   contentStyle?: ViewStyle;
+  scrollRef?: React.RefObject<ScrollView | null>;
 }>) {
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={s.safe}
+      edges={['top', 'bottom']}
+    >
       <KeyboardAvoidingView
         style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
+        keyboardVerticalOffset={
+          Platform.OS === 'ios'
+            ? 8
+            : 0
+        }
       >
         <ScrollView
+          ref={scrollRef}
           style={s.flex}
-          contentContainerStyle={[s.content, contentStyle]}
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          contentContainerStyle={[
+            s.content,
+            contentStyle,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === 'ios'
+              ? 'interactive'
+              : 'on-drag'
+          }
+          automaticallyAdjustKeyboardInsets={
+            Platform.OS === 'ios'
+          }
           showsVerticalScrollIndicator={false}
         >
           {children}
@@ -46,5 +71,6 @@ const s = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
+    paddingBottom: 28,
   },
 });

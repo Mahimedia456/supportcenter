@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useEffect,
   useRef,
   useState,
@@ -31,6 +31,7 @@ export default function LoginScreen() {
   const { signIn } = useAuth();
 
   const passwordRef = useRef<TextInput>(null);
+  const scrollRef = useRef<import('react-native').ScrollView>(null);
   const screenHeight = useRef(Dimensions.get('window').height).current;
   const playLaunchIntro = useRef(!launchIntroPlayed).current;
 
@@ -166,7 +167,10 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAwareScreen contentStyle={s.scrollContent}>
+    <KeyboardAwareScreen
+      contentStyle={s.scrollContent}
+      scrollRef={scrollRef}
+    >
       <ImageBackground
         source={BACKGROUND}
         resizeMode="cover"
@@ -251,6 +255,13 @@ export default function LoginScreen() {
                 returnKeyType="done"
                 textContentType="password"
                 blurOnSubmit={false}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollRef.current?.scrollToEnd({
+                      animated: true,
+                    });
+                  }, 220);
+                }}
                 onSubmitEditing={submit}
               />
 
@@ -293,6 +304,7 @@ export default function LoginScreen() {
 const s = StyleSheet.create({
   scrollContent: {
     minHeight: '100%',
+    paddingBottom: 40,
   },
   background: {
     flex: 1,
