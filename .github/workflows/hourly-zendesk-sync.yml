@@ -1,45 +1,71 @@
-
-name: Hourly Zendesk Sync
+name: Hourly Zendesk Snapshot Sync
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 * * * *'
-  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Trigger 90-day Zendesk DB sync
+      - name: Sync staged Zendesk snapshot
         env:
-          SUPPORTCENTER_CRON_SECRET: ${{ secrets.SUPPORTCENTER_CRON_SECRET }}
+          CRON_SECRET: ${{ secrets.SUPPORTCENTER_CRON_SECRET }}
+          BASE_URL: https://supportcenter-kappa.vercel.app
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          if [ -z "$SUPPORTCENTER_CRON_SECRET" ]; then
-            echo "Missing GitHub secret SUPPORTCENTER_CRON_SECRET"
-            exit 1
-          fi
+          call_stage () {
+            local workspace="$1"
+            local stage="$2"
+            local cursor="${3:-}"
 
-          URL="https://supportcenter-kappa.vercel.app/api/zendesk-hourly-sync"
+            local url="$BASE_URL/api/zendesk-hourly-sync?workspace=$workspace&stage=$stage"
 
-          echo "Calling $URL"
+            if [ -n "$cursor" ]; then
+              local encoded
+              encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$cursor")
+              url="$url&cursor=$encoded"
+            fi
 
-          HTTP_CODE=$(curl \
-            --silent \
-            --show-error \
-            --location \
-            --output response.json \
-            --write-out "%{http_code}" \
-            --request GET \
-            --header "Authorization: Bearer $SUPPORTCENTER_CRON_SECRET" \
-            "$URL")
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$url"
+          }
 
-          cat response.json
-          echo ""
-          echo "HTTP status: $HTTP_CODE"
+          for workspace in atomos angelbird; do
+            echo "Workspace: $workspace"
 
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            exit 1
-          fi
+            call_stage "$workspace" reference | tee /tmp/result.json
+            sleep 2
+
+            call_stage "$workspace" satisfaction | tee /tmp/result.json
+            sleep 2
+
+            call_stage "$workspace" metrics | tee /tmp/result.json
+            sleep 2
+
+            for stage in tickets metric-events; do
+              cursor=""
+              for i in $(seq 1 50); do
+                echo "$workspace / $stage chunk $i"
+
+                if [ -n "$cursor" ]; then
+                  call_stage "$workspace" "$stage" "$cursor" | tee /tmp/result.json
+                else
+                  call_stage "$workspace" "$stage" | tee /tmp/result.json
+                fi
+
+                done_flag=$(jq -r '.done // false' /tmp/result.json)
+                cursor=$(jq -r '.next // empty' /tmp/result.json)
+
+                if [ "$done_flag" = "true" ] || [ -z "$cursor" ]; then
+                  break
+                fi
+
+                sleep 2
+              done
+            done
+          done

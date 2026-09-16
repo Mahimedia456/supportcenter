@@ -1,45 +1,49 @@
+import {Alert} from 'react-native';
+import {useCallback,useEffect} from 'react';
+import {useAuth} from '@/context/AuthContext';
+import {hydrateSupportSnapshot,loadSupportSnapshot,refreshSupportSnapshot,useSupportDataStore} from '@/lib/support-data-store';
 
-import { useCallback, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import {
-  hydrateSupportSnapshot,
-  loadSupportSnapshot,
-  refreshSupportSnapshot,
-  useSupportDataStore,
-} from '@/lib/support-data-store';
+let bootstrapPromise:Promise<void>|null=null;
+let bootstrapDone=false;
 
-export function useGlobalSupportSnapshot() {
-  const { session, ensureFreshSession } = useAuth();
-  const store = useSupportDataStore();
+async function bootstrapOnce(token:string){
+ if(bootstrapDone)return;
+ if(bootstrapPromise)return bootstrapPromise;
+ bootstrapPromise=(async()=>{
+  await hydrateSupportSnapshot();
+  if(token)await loadSupportSnapshot(token,false);
+  bootstrapDone=true;
+ })().catch(()=>undefined).finally(()=>{bootstrapPromise=null});
+ return bootstrapPromise;
+}
 
-  const getToken = useCallback(async () => {
-    const fresh = await ensureFreshSession();
-    return fresh?.accessToken || session?.accessToken || '';
-  }, [ensureFreshSession, session?.accessToken]);
+export function useGlobalSupportSnapshot(){
+ const {session,ensureFreshSession}=useAuth();
+ const store=useSupportDataStore();
 
-  useEffect(() => {
-    let active = true;
+ const getToken=useCallback(async()=>{
+  const fresh=await ensureFreshSession();
+  return fresh?.accessToken||session?.accessToken||'';
+ },[ensureFreshSession,session?.accessToken]);
 
-    (async () => {
-      await hydrateSupportSnapshot();
-      if (!active) return;
+ useEffect(()=>{
+  let active=true;
+  void(async()=>{
+   const token=await getToken();
+   if(active)await bootstrapOnce(token);
+  })();
+  return()=>{active=false};
+ },[getToken]);
 
-      const token = await getToken();
-      if (!token) return;
+ const refresh=useCallback(async()=>{
+  Alert.alert(
+   'Sync in progress',
+   'Your syncing data is under process. You will see updated data once it is done.',
+   [{text:'Close'}],
+  );
+  const token=await getToken();
+  if(token)void refreshSupportSnapshot(token);
+ },[getToken]);
 
-      await loadSupportSnapshot(token, false);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [getToken]);
-
-  const refresh = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-    await refreshSupportSnapshot(token);
-  }, [getToken]);
-
-  return { ...store, refresh };
+ return {...store,refresh};
 }
