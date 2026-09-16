@@ -1,5 +1,4 @@
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Client } from 'pg';
 
 type WorkspaceSlug = 'atomos' | 'angelbird';
@@ -273,8 +272,8 @@ async function syncWorkspace(
 }
 
 export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
+  req: any,
+  res: any,
 ) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({

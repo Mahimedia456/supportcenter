@@ -1,5 +1,4 @@
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import {
   bearer,
   connectDb,
@@ -8,8 +7,8 @@ import {
 } from './_support-cache-common';
 
 export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
+  req: any,
+  res: any,
 ) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
