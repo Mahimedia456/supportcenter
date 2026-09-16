@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -17,54 +18,96 @@ import {
   router,
   type Href,
 } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { AppCard } from '@/components/AppCard';
-import { AgentCard } from '@/components/team/AgentCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import * as api from '@/lib/api';
 import {
-  buildBreakdown,
-} from '@/lib/insight-analytics';
+  getZendeskDbSnapshot,
+  syncZendeskDb,
+  type ZendeskDbSnapshot,
+} from '@/lib/zendesk-db';
 import {
   detectedMapping,
-  fieldValue,
+  roleValues,
+  type AtomosFieldRole,
 } from '@/lib/zendesk-dimensions';
-import {
-  buildAgentRows,
-  feedbackSummary,
-} from '@/lib/feedback-team';
 
 type Tab =
   | 'forms'
-  | 'issues'
+  | 'supportType'
   | 'products'
   | 'regions'
-  | 'custom'
-  | 'feedback'
-  | 'team';
+  | 'category'
+  | 'faultCategory'
+  | 'rma';
 
 const TABS: Array<{
   key: Tab;
   label: string;
+  icon: keyof typeof Ionicons.glyphMap;
 }> = [
-  { key: 'forms', label: 'Forms' },
-  { key: 'issues', label: 'Issues' },
+  {
+    key: 'forms',
+    label: 'Forms',
+    icon: 'document-text-outline',
+  },
+  {
+    key: 'supportType',
+    label: 'Support Type',
+    icon: 'help-buoy-outline',
+  },
   {
     key: 'products',
     label: 'Products',
+    icon: 'hardware-chip-outline',
   },
   {
     key: 'regions',
     label: 'Regions',
+    icon: 'globe-outline',
   },
-  { key: 'custom', label: 'Custom' },
   {
-    key: 'feedback',
-    label: 'Feedback',
+    key: 'category',
+    label: 'Category',
+    icon: 'grid-outline',
   },
-  { key: 'team', label: 'Team' },
+  {
+    key: 'faultCategory',
+    label: 'Fault',
+    icon: 'warning-outline',
+  },
+  {
+    key: 'rma',
+    label: 'RMA',
+    icon: 'repeat-outline',
+  },
 ];
+
+function role(
+  tab: Tab,
+): AtomosFieldRole | null {
+  if (tab === 'supportType') {
+    return 'supportType';
+  }
+  if (tab === 'products') {
+    return 'device';
+  }
+  if (tab === 'regions') {
+    return 'region';
+  }
+  if (tab === 'category') {
+    return 'category';
+  }
+  if (tab === 'faultCategory') {
+    return 'faultCategory';
+  }
+  if (tab === 'rma') {
+    return 'rma';
+  }
+  return null;
+}
 
 export default function Insights() {
   const {
@@ -72,335 +115,313 @@ export default function Insights() {
     ensureFreshSession,
   } = useAuth();
 
-  const [tickets, setTickets] =
-    useState<api.ZendeskTicket[]>([]);
-  const [forms, setForms] =
-    useState<api.ZendeskForm[]>([]);
-  const [fields, setFields] =
-    useState<
-      api.ZendeskTicketField[]
-    >([]);
-  const [ratings, setRatings] =
-    useState<
-      api.ZendeskSatisfactionRating[]
-    >([]);
-  const [agents, setAgents] =
-    useState<api.ZendeskUser[]>([]);
-
+  const [snapshot, setSnapshot] =
+    useState<ZendeskDbSnapshot | null>(
+      null,
+    );
   const [tab, setTab] =
     useState<Tab>('forms');
   const [loading, setLoading] =
     useState(true);
   const [refreshing, setRefreshing] =
     useState(false);
-  const [error, setError] = useState('');
-  const [
-    feedbackAvailable,
-    setFeedbackAvailable,
-  ] = useState(true);
+  const [error, setError] =
+    useState('');
 
-  const load = useCallback(async () => {
-    setError('');
+  const token =
+    useCallback(async () => {
+      const fresh =
+        await ensureFreshSession();
 
-    const fresh =
-      await ensureFreshSession();
-    const token =
-      fresh?.accessToken ||
-      session?.accessToken;
-
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const ticketResult =
-        await api.zendeskAllTickets(
-          token,
-        );
-
-      setTickets(
-        ticketResult.tickets || [],
+      return (
+        fresh?.accessToken ||
+        session?.accessToken ||
+        ''
       );
+    }, [
+      ensureFreshSession,
+      session?.accessToken,
+    ]);
 
-      const results =
-        await Promise.allSettled([
-          api.zendeskForms(token),
-          api.zendeskFields(token),
-          api.zendeskSatisfaction(
-            token,
-            365,
-          ),
-          api.zendeskAgents(token),
-        ]);
+  const load =
+    useCallback(async () => {
+      setError('');
 
-      const [
-        formResult,
-        fieldResult,
-        satisfactionResult,
-        agentResult,
-      ] = results;
+      try {
+        const accessToken =
+          await token();
 
-      if (
-        formResult.status ===
-        'fulfilled'
-      ) {
-        setForms(
-          formResult.value
-            .ticket_forms || [],
+        if (!accessToken) {
+          return;
+        }
+
+        const data =
+          await getZendeskDbSnapshot(
+            accessToken,
+          );
+
+        setSnapshot(data);
+      } catch (e: any) {
+        setError(
+          e?.message ||
+            'Unable to load insights.',
         );
+      } finally {
+        setLoading(false);
       }
+    }, [token]);
 
-      if (
-        fieldResult.status ===
-        'fulfilled'
-      ) {
-        setFields(
-          fieldResult.value
-            .ticket_fields || [],
-        );
-      }
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-      if (
-        satisfactionResult.status ===
-        'fulfilled'
-      ) {
-        setRatings(
-          satisfactionResult.value
-            .ratings || [],
-        );
-        setFeedbackAvailable(true);
-      } else {
-        setFeedbackAvailable(false);
-      }
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const accessToken =
+        await token();
 
-      if (
-        agentResult.status ===
-        'fulfilled'
-      ) {
-        setAgents(
-          agentResult.value.users ||
-            [],
-        );
+      if (accessToken) {
+        const data =
+          await syncZendeskDb(
+            accessToken,
+          );
+        setSnapshot(data);
       }
     } catch (e: any) {
       setError(
         e?.message ||
-          'Unable to load Zendesk tickets.',
+          'Unable to sync insights.',
       );
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  }, [
-    ensureFreshSession,
-    session?.accessToken,
-  ]);
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
   }
 
+  const tickets =
+    snapshot?.tickets || [];
+  const forms =
+    snapshot?.forms || [];
+  const fields =
+    snapshot?.fields || [];
+
   const mapping = useMemo(
-    () => detectedMapping(fields),
+    () =>
+      detectedMapping(fields),
     [fields],
   );
 
-  const dimension =
-    tab === 'forms'
-      ? 'form'
-      : tab === 'issues'
-        ? 'issue'
-        : tab === 'products'
-          ? 'device'
-          : 'region';
+  const formRows = useMemo(() => {
+    const counts =
+      new Map<number, number>();
 
-  const breakdown = useMemo(
-    () =>
-      [
-        'forms',
-        'issues',
-        'products',
-        'regions',
-      ].includes(tab)
-        ? buildBreakdown(
-            tickets,
-            fields,
-            forms,
-            dimension as
-              | 'form'
-              | 'issue'
-              | 'device'
-              | 'region',
-          )
-        : [],
-    [
-      dimension,
-      fields,
-      forms,
-      tab,
-      tickets,
-    ],
-  );
-
-  const customRows = useMemo(() => {
-    const rows: Array<{
-      fieldId: number;
-      field: string;
-      value: string;
-      count: number;
-    }> = [];
-
-    for (const field of fields.filter(
-      (item) =>
-        item.active !== false &&
-        item.custom !== false,
-    )) {
-      const counts =
-        new Map<string, number>();
-
-      for (const ticket of tickets) {
-        const value =
-          fieldValue(
-            ticket,
-            field,
-          );
-
-        if (!value) continue;
-
+    for (const ticket of tickets) {
+      if (
+        ticket.ticket_form_id
+      ) {
         counts.set(
-          value,
-          (counts.get(value) || 0) +
-            1,
+          ticket.ticket_form_id,
+          (counts.get(
+            ticket.ticket_form_id,
+          ) || 0) + 1,
         );
-      }
-
-      for (const [
-        value,
-        count,
-      ] of counts) {
-        rows.push({
-          fieldId: field.id,
-          field: field.title,
-          value,
-          count,
-        });
       }
     }
 
-    return rows.sort(
-      (a, b) =>
-        b.count - a.count,
+    return forms
+      .filter(
+        (form) =>
+          form.active !== false,
+      )
+      .map((form) => ({
+        id: form.id,
+        label:
+          form.display_name ||
+          form.name ||
+          `Form #${form.id}`,
+        count:
+          counts.get(form.id) ||
+          0,
+      }))
+      .sort(
+        (a, b) =>
+          b.count - a.count,
+      );
+  }, [forms, tickets]);
+
+  const rows = useMemo(() => {
+    const currentRole =
+      role(tab);
+
+    if (!currentRole) {
+      return [];
+    }
+
+    return roleValues(
+      tickets,
+      fields,
+      currentRole,
     );
-  }, [fields, tickets]);
+  }, [fields, tab, tickets]);
 
-  const feedback = useMemo(
-    () => feedbackSummary(ratings),
-    [ratings],
-  );
-
-  const team = useMemo(
-    () =>
-      buildAgentRows(
-        agents,
-        tickets,
-        ratings,
+  const total =
+    tickets.length;
+  const open =
+    tickets.filter((ticket) =>
+      [
+        'new',
+        'open',
+        'pending',
+      ].includes(
+        String(
+          ticket.status || '',
+        ).toLowerCase(),
       ),
-    [agents, ratings, tickets],
-  );
+    ).length;
 
-  function openDimension(
+  const high =
+    tickets.filter((ticket) =>
+      ['high', 'urgent'].includes(
+        String(
+          ticket.priority || '',
+        ).toLowerCase(),
+      ),
+    ).length;
+
+  const unassigned =
+    tickets.filter(
+      (ticket) =>
+        !ticket.assignee_id,
+    ).length;
+
+  function openForm(
+    id: number,
+    title: string,
+  ) {
+    router.push({
+      pathname:
+        '/ticket-results',
+      params: {
+        mode: 'form',
+        formId:
+          String(id),
+        title,
+      },
+    } as unknown as Href);
+  }
+
+  function openRole(
+    currentRole:
+      AtomosFieldRole,
     value: string,
   ) {
     router.push({
-      pathname: '/insight-results',
+      pathname:
+        '/ticket-results',
       params: {
-        dimension,
+        mode:
+          'atomos-field',
+        role:
+          currentRole,
         value,
         title: value,
       },
     } as unknown as Href);
   }
 
-  function openCustom(
-    row: {
-      fieldId: number;
-      field: string;
-      value: string;
-    },
-  ) {
-    router.push({
-      pathname: '/insight-results',
-      params: {
-        mode: 'custom-field',
-        fieldId: String(
-          row.fieldId,
-        ),
-        value: row.value,
-        title: `${row.field}: ${row.value}`,
-      },
-    } as unknown as Href);
-  }
+  const activeRows =
+    tab === 'forms'
+      ? formRows
+      : rows.map(
+          (item, index) => ({
+            id: `${item.label}-${index}`,
+            label: item.label,
+            count: item.count,
+          }),
+        );
 
-  function openFeedback(
-    score:
-      | 'good'
-      | 'bad'
-      | 'all',
-  ) {
-    router.push({
-      pathname: '/insight-results',
-      params: {
-        mode: 'feedback',
-        score,
-        title:
-          score === 'all'
-            ? 'All feedback'
-            : `${score
-                .charAt(0)
-                .toUpperCase()}${score.slice(
-                1,
-              )} feedback`,
-      },
-    } as unknown as Href);
-  }
+  const max = Math.max(
+    1,
+    ...activeRows.map(
+      (row) => row.count,
+    ),
+  );
 
   return (
     <ScrollView
       style={s.screen}
-      contentContainerStyle={s.content}
+      contentContainerStyle={
+        s.content
+      }
       refreshControl={
         <RefreshControl
-          refreshing={refreshing}
+          refreshing={
+            refreshing
+          }
           onRefresh={refresh}
-          tintColor={colors.primary}
+          tintColor={
+            colors.primary
+          }
         />
       }
     >
       <WorkspaceHeader />
 
-      <Text style={s.eyebrow}>
-        ZENDESK INSIGHTS
-      </Text>
-      <Text style={s.title}>
-        Support intelligence
-      </Text>
-      <Text style={s.caption}>
-        Forms, issues, Atomos products,
-        custom fields, feedback and team
-      </Text>
+      <View style={s.hero}>
+        <View style={s.heroCopy}>
+          <Text
+            style={s.eyebrow}
+          >
+            90-DAY SUPPORT INTELLIGENCE
+          </Text>
+          <Text style={s.title}>
+            Insights
+          </Text>
+          <Text
+            style={s.caption}
+          >
+            Synced Zendesk operational
+            patterns
+          </Text>
+        </View>
+
+        <View style={s.period}>
+          <Text
+            style={s.periodText}
+          >
+            90D
+          </Text>
+        </View>
+      </View>
+
+      <View style={s.kpis}>
+        <Kpi
+          label="Tickets"
+          value={total}
+        />
+        <Kpi
+          label="Active"
+          value={open}
+        />
+        <Kpi
+          label="High"
+          value={high}
+          accent
+        />
+        <Kpi
+          label="Unassigned"
+          value={unassigned}
+        />
+      </View>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={
           false
         }
-        contentContainerStyle={s.tabs}
+        contentContainerStyle={
+          s.tabs
+        }
       >
         {TABS.map((item) => (
           <Pressable
@@ -414,6 +435,15 @@ export default function Insights() {
                 s.tabActive,
             ]}
           >
+            <Ionicons
+              name={item.icon}
+              size={16}
+              color={
+                tab === item.key
+                  ? '#FFFFFF'
+                  : colors.muted
+              }
+            />
             <Text
               style={[
                 s.tabText,
@@ -427,32 +457,33 @@ export default function Insights() {
         ))}
       </ScrollView>
 
-      {error ? (
-        <AppCard>
-          <Text style={s.error}>
-            {error}
-          </Text>
-        </AppCard>
-      ) : null}
+      {snapshot ? (
+        <AppCard
+          style={s.mappingCard}
+        >
+          <View
+            style={s.mappingTop}
+          >
+            <Text
+              style={s.mappingTitle}
+            >
+              Zendesk field map
+            </Text>
+            <Text
+              style={s.synced}
+            >
+              {snapshot.syncedAt
+                ? `Synced ${new Date(
+                    snapshot.syncedAt,
+                  ).toLocaleString()}`
+                : 'Not synced'}
+            </Text>
+          </View>
 
-      {loading ? (
-        <View style={s.loading}>
-          <ActivityIndicator
-            color={colors.primary}
-          />
-        </View>
-      ) : null}
-
-      {!loading &&
-      [
-        'forms',
-        'issues',
-        'products',
-        'regions',
-      ].includes(tab) ? (
-        <>
-          <AppCard style={s.mapping}>
-            <MappingRow
+          <View
+            style={s.mappingGrid}
+          >
+            <Mapping
               label="Product"
               value={
                 mapping.device
@@ -460,315 +491,317 @@ export default function Insights() {
                 'Not detected'
               }
             />
-            <MappingRow
-              label="Issue"
-              value={
-                mapping.issue?.title ||
-                'Not detected'
-              }
-            />
-            <MappingRow
+            <Mapping
               label="Region"
               value={
                 mapping.region
                   ?.title ||
                 'Not detected'
               }
-              last
             />
-          </AppCard>
-
-          <View style={s.sectionRow}>
-            <Text style={s.sectionTitle}>
-              {
-                TABS.find(
-                  (item) =>
-                    item.key === tab,
-                )?.label
+            <Mapping
+              label="Fault"
+              value={
+                mapping
+                  .faultCategory
+                  ?.title ||
+                'Not detected'
               }
-            </Text>
-            <Text style={s.count}>
-              {breakdown.length}
-            </Text>
+            />
+            <Mapping
+              label="RMA"
+              value={
+                mapping.rma
+                  ?.title ||
+                'Not detected'
+              }
+            />
           </View>
-
-          <AppCard>
-            {breakdown.map(
-              (row, index) => (
-                <Pressable
-                  key={row.key}
-                  onPress={() =>
-                    openDimension(
-                      row.label,
-                    )
-                  }
-                  style={[
-                    s.row,
-                    index ===
-                      breakdown.length -
-                        1 &&
-                      s.lastRow,
-                  ]}
-                >
-                  <View style={s.rowCopy}>
-                    <Text
-                      style={s.rowTitle}
-                    >
-                      {row.label}
-                    </Text>
-                    <Text
-                      style={s.rowMeta}
-                    >
-                      {row.open} open ·{' '}
-                      {row.high} high ·{' '}
-                      {row.unassigned}{' '}
-                      unassigned
-                    </Text>
-                  </View>
-                  <Text style={s.rowCount}>
-                    {row.count}
-                  </Text>
-                  <Text style={s.chevron}>
-                    ›
-                  </Text>
-                </Pressable>
-              ),
-            )}
-          </AppCard>
-        </>
+        </AppCard>
       ) : null}
 
-      {!loading &&
-      tab === 'custom' ? (
+      {loading ? (
+        <View style={s.loading}>
+          <ActivityIndicator
+            color={
+              colors.primary
+            }
+          />
+          <Text
+            style={s.loadingText}
+          >
+            Initializing support
+            data…
+          </Text>
+        </View>
+      ) : null}
+
+      {error ? (
+        <AppCard>
+          <Text
+            style={s.errorTitle}
+          >
+            Insights unavailable
+          </Text>
+          <Text
+            style={s.errorText}
+          >
+            {error}
+          </Text>
+        </AppCard>
+      ) : null}
+
+      {!loading ? (
         <>
-          <View style={s.sectionRow}>
-            <Text style={s.sectionTitle}>
-              Custom fields
-            </Text>
+          <View
+            style={s.sectionRow}
+          >
+            <View>
+              <Text
+                style={
+                  s.sectionTitle
+                }
+              >
+                {
+                  TABS.find(
+                    (item) =>
+                      item.key ===
+                      tab,
+                  )?.label
+                }
+              </Text>
+              <Text
+                style={
+                  s.sectionCaption
+                }
+              >
+                Tap a row to open
+                ticket results
+              </Text>
+            </View>
+
             <Text style={s.count}>
-              {customRows.length}
+              {
+                activeRows.length
+              }
             </Text>
           </View>
 
           <AppCard>
-            {customRows
-              .slice(0, 160)
+            {activeRows
+              .slice(0, 30)
               .map(
                 (
                   row,
                   index,
                 ) => (
                   <Pressable
-                    key={`${row.fieldId}:${row.value}`}
-                    onPress={() =>
-                      openCustom(row)
-                    }
+                    key={String(
+                      row.id,
+                    )}
+                    onPress={() => {
+                      if (
+                        tab ===
+                        'forms'
+                      ) {
+                        openForm(
+                          Number(
+                            row.id,
+                          ),
+                          row.label,
+                        );
+                      } else {
+                        openRole(
+                          role(
+                            tab,
+                          ) as AtomosFieldRole,
+                          row.label,
+                        );
+                      }
+                    }}
                     style={[
-                      s.row,
+                      s.resultRow,
                       index ===
                         Math.min(
-                          customRows.length,
-                          160,
+                          activeRows.length,
+                          30,
                         ) -
                           1 &&
                         s.lastRow,
                     ]}
                   >
                     <View
-                      style={s.rowCopy}
+                      style={
+                        s.resultCopy
+                      }
                     >
-                      <Text
+                      <View
                         style={
-                          s.fieldName
+                          s.resultTop
                         }
                       >
-                        {row.field}
-                      </Text>
-                      <Text
+                        <Text
+                          style={
+                            s.resultTitle
+                          }
+                          numberOfLines={
+                            2
+                          }
+                        >
+                          {
+                            row.label
+                          }
+                        </Text>
+
+                        <Text
+                          style={
+                            s.resultCount
+                          }
+                        >
+                          {
+                            row.count
+                          }
+                        </Text>
+                      </View>
+
+                      <View
                         style={
-                          s.rowTitle
+                          s.barTrack
                         }
                       >
-                        {row.value}
-                      </Text>
+                        <View
+                          style={[
+                            s.barFill,
+                            {
+                              width: `${Math.max(
+                                4,
+                                (row.count /
+                                  max) *
+                                  100,
+                              )}%`,
+                            },
+                          ]}
+                        />
+                      </View>
                     </View>
-                    <Text
-                      style={s.rowCount}
-                    >
-                      {row.count}
-                    </Text>
-                    <Text
-                      style={s.chevron}
-                    >
-                      ›
-                    </Text>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={
+                        colors.cyan
+                      }
+                    />
                   </Pressable>
                 ),
               )}
+
+            {!activeRows.length ? (
+              <View
+                style={s.empty}
+              >
+                <Ionicons
+                  name="analytics-outline"
+                  size={30}
+                  color={
+                    colors.muted
+                  }
+                />
+                <Text
+                  style={
+                    s.emptyTitle
+                  }
+                >
+                  No values found
+                </Text>
+                <Text
+                  style={
+                    s.emptyText
+                  }
+                >
+                  Pull down to sync the
+                  latest 90-day Zendesk
+                  snapshot.
+                </Text>
+              </View>
+            ) : null}
           </AppCard>
-        </>
-      ) : null}
-
-      {!loading &&
-      tab === 'feedback' ? (
-        feedbackAvailable ? (
-          <View style={s.feedbackGrid}>
-            <FeedbackCard
-              label="Good"
-              value={feedback.good}
-              percent={
-                feedback.goodPct
-              }
-              onPress={() =>
-                openFeedback('good')
-              }
-            />
-            <FeedbackCard
-              label="Bad"
-              value={feedback.bad}
-              percent={
-                feedback.badPct
-              }
-              danger
-              onPress={() =>
-                openFeedback('bad')
-              }
-            />
-            <FeedbackCard
-              label="All"
-              value={feedback.total}
-              percent={100}
-              onPress={() =>
-                openFeedback('all')
-              }
-            />
-          </View>
-        ) : (
-          <AppCard>
-            <Text
-              style={
-                s.unavailableTitle
-              }
-            >
-              Feedback unavailable
-            </Text>
-            <Text
-              style={
-                s.unavailableText
-              }
-            >
-              Zendesk Satisfaction
-              Ratings could not be loaded
-              for this account/token.
-            </Text>
-          </AppCard>
-        )
-      ) : null}
-
-      {!loading && tab === 'team' ? (
-        <>
-          <View style={s.sectionRow}>
-            <Text style={s.sectionTitle}>
-              Team
-            </Text>
-            <Text style={s.count}>
-              {team.length}
-            </Text>
-          </View>
-
-          {team.map((row) => (
-            <AgentCard
-              key={row.id}
-              row={row}
-              onPress={() =>
-                router.push({
-                  pathname:
-                    '/agent/[id]',
-                  params: {
-                    id: String(
-                      row.id,
-                    ),
-                  },
-                } as unknown as Href)
-              }
-            />
-          ))}
         </>
       ) : null}
     </ScrollView>
   );
 }
 
-function MappingRow({
+function Kpi({
   label,
   value,
-  last = false,
+  accent = false,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+}) {
+  return (
+    <View style={s.kpi}>
+      <Text
+        style={[
+          s.kpiValue,
+          accent &&
+            s.kpiAccent,
+        ]}
+      >
+        {value}
+      </Text>
+      <Text style={s.kpiLabel}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function Mapping({
+  label,
+  value,
 }: {
   label: string;
   value: string;
-  last?: boolean;
 }) {
   return (
-    <View
-      style={[
-        s.mappingRow,
-        last && s.lastRow,
-      ]}
-    >
-      <Text style={s.mappingLabel}>
+    <View style={s.mappingItem}>
+      <Text
+        style={s.mappingLabel}
+      >
         {label}
       </Text>
-      <Text style={s.mappingValue}>
+      <Text
+        style={s.mappingValue}
+        numberOfLines={1}
+      >
         {value}
       </Text>
     </View>
   );
 }
 
-function FeedbackCard({
-  label,
-  value,
-  percent,
-  danger = false,
-  onPress,
-}: {
-  label: string;
-  value: number;
-  percent: number;
-  danger?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        s.feedbackCard,
-        danger &&
-          s.feedbackDanger,
-      ]}
-    >
-      <Text style={s.feedbackLabel}>
-        {label}
-      </Text>
-      <Text style={s.feedbackValue}>
-        {value}
-      </Text>
-      <Text style={s.feedbackMeta}>
-        {percent}% · View tickets ›
-      </Text>
-    </Pressable>
-  );
-}
-
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor:
+      colors.background,
   },
   content: {
     paddingHorizontal: 18,
     paddingTop: 8,
     paddingBottom: 120,
+  },
+  hero: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    gap: 12,
+  },
+  heroCopy: {
+    flex: 1,
   },
   eyebrow: {
     color: colors.primary,
@@ -778,169 +811,240 @@ const s = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 28,
+    fontSize: 29,
     fontWeight: '900',
     marginTop: 5,
   },
   caption: {
     color: colors.muted,
     fontSize: 11,
-    lineHeight: 16,
+    marginTop: 5,
+  },
+  period: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor:
+      colors.primarySoft,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  periodText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  kpis: {
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 15,
+  },
+  kpi: {
+    flex: 1,
+    minHeight: 76,
+    borderRadius: 15,
+    backgroundColor:
+      colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 11,
+  },
+  kpiValue: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  kpiAccent: {
+    color: colors.danger,
+  },
+  kpiLabel: {
+    color: colors.muted,
+    fontSize: 8,
+    fontWeight: '800',
     marginTop: 5,
   },
   tabs: {
     gap: 8,
-    paddingVertical: 16,
+    paddingVertical: 15,
   },
   tab: {
-    borderRadius: 999,
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 14,
+    backgroundColor:
+      colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
   },
   tabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor:
+      colors.primary,
+    borderColor:
+      colors.primary,
   },
   tabText: {
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
   },
   tabTextActive: {
     color: '#FFFFFF',
   },
-  error: {
-    color: colors.danger,
-    fontWeight: '700',
+  mappingCard: {
+    backgroundColor:
+      '#F5FBF8',
   },
-  loading: {
-    paddingVertical: 65,
-    alignItems: 'center',
-  },
-  mapping: {
-    marginBottom: 15,
-  },
-  mappingRow: {
-    minHeight: 42,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  mappingTop: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent:
+      'space-between',
+    gap: 10,
   },
-  lastRow: {
-    borderBottomWidth: 0,
+  mappingTitle: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  synced: {
+    flex: 1,
+    textAlign: 'right',
+    color: colors.muted,
+    fontSize: 8,
+  },
+  mappingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  mappingItem: {
+    width: '48%',
+    borderRadius: 12,
+    backgroundColor:
+      colors.surface,
+    padding: 10,
   },
   mappingLabel: {
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 8,
+    fontWeight: '800',
   },
   mappingValue: {
     color: colors.primary,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
-    textAlign: 'right',
-    flex: 1,
+    marginTop: 4,
+  },
+  loading: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 10,
+  },
+  errorTitle: {
+    color: colors.danger,
+    fontWeight: '900',
+  },
+  errorText: {
+    color: colors.text,
+    fontSize: 10,
+    marginTop: 4,
   },
   sectionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 9,
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 10,
   },
   sectionTitle: {
     color: colors.text,
     fontSize: 18,
     fontWeight: '900',
   },
+  sectionCaption: {
+    color: colors.muted,
+    fontSize: 9,
+    marginTop: 3,
+  },
   count: {
     color: colors.primary,
-    backgroundColor: colors.primarySoft,
+    backgroundColor:
+      colors.primarySoft,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
     fontSize: 10,
     fontWeight: '900',
   },
-  row: {
-    minHeight: 61,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  resultRow: {
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor:
+      colors.border,
     paddingVertical: 11,
   },
-  rowCopy: {
+  lastRow: {
+    borderBottomWidth: 0,
+  },
+  resultCopy: {
     flex: 1,
   },
-  rowTitle: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  rowMeta: {
-    color: colors.muted,
-    fontSize: 9,
-    marginTop: 4,
-  },
-  fieldName: {
-    color: colors.primary,
-    fontSize: 9,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  rowCount: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  chevron: {
-    color: colors.muted,
-    fontSize: 23,
-  },
-  feedbackGrid: {
+  resultTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent:
+      'space-between',
     gap: 10,
   },
-  feedbackCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#CDE7DC',
-    backgroundColor: '#EEF8F3',
-    padding: 17,
-  },
-  feedbackDanger: {
-    backgroundColor: '#FFF3F3',
-    borderColor: '#F1D2D2',
-  },
-  feedbackLabel: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  feedbackValue: {
+  resultTitle: {
+    flex: 1,
     color: colors.text,
-    fontSize: 31,
+    fontSize: 12,
     fontWeight: '900',
-    marginTop: 7,
   },
-  feedbackMeta: {
+  resultCount: {
     color: colors.primary,
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  unavailableTitle: {
-    color: colors.warning,
+    fontSize: 13,
     fontWeight: '900',
   },
-  unavailableText: {
+  barTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor:
+      '#EAF1EE',
+    marginTop: 9,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor:
+      colors.primary,
+  },
+  empty: {
+    alignItems: 'center',
+    paddingVertical: 35,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+  emptyText: {
     color: colors.muted,
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 5,
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

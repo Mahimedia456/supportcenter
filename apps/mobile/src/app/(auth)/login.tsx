@@ -23,7 +23,7 @@ import { finalTheme } from '@/constants/final-theme';
 import { useAuth } from '@/context/AuthContext';
 
 const BACKGROUND = require('../../../assets/brand/final/auth-background.png');
-const LOGO = require('../../../assets/brand/final/support-command-center-logo-transparent.png');
+const LOGO = require('../../../assets/brand/final/support-command-center-mark.png');
 
 let launchIntroPlayed = false;
 
@@ -331,9 +331,9 @@ const s = StyleSheet.create({
     zIndex: 2,
   },
   logo: {
-    width: 330,
-    height: 230,
-    marginBottom: -38,
+    width: 190,
+    height: 190,
+    marginBottom: 0,
   },
   brandTitle: {
     color: '#0C2923',
@@ -438,5 +438,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+
 
 

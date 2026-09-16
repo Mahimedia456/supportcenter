@@ -25,33 +25,13 @@ import { DeviceHealthCard } from '@/components/devices/DeviceHealthCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
+import { loadZendeskTicketUniverse, forceZendeskDbSync } from '@/lib/zendesk-source';
 import {
   buildDeviceHealth,
 } from '@/lib/device-health';
 import {
   detectedMapping,
 } from '@/lib/zendesk-dimensions';
-
-type Filter =
-  | 'all'
-  | 'with-cases'
-  | 'faulty'
-  | 'rma'
-  | 'rising';
-
-const FILTERS: Array<{
-  key: Filter;
-  label: string;
-}> = [
-  { key: 'all', label: 'All Products' },
-  {
-    key: 'with-cases',
-    label: 'With Tickets',
-  },
-  { key: 'faulty', label: 'Faulty' },
-  { key: 'rma', label: 'RMA' },
-  { key: 'rising', label: 'Rising' },
-];
 
 export default function Devices() {
   const {
@@ -61,28 +41,22 @@ export default function Devices() {
 
   const [tickets, setTickets] =
     useState<api.ZendeskTicket[]>([]);
-  const [forms, setForms] =
-    useState<api.ZendeskForm[]>([]);
   const [fields, setFields] =
     useState<
       api.ZendeskTicketField[]
     >([]);
-
-  const [filter, setFilter] =
-    useState<Filter>('all');
+  const [forms, setForms] =
+    useState<api.ZendeskForm[]>([]);
   const [query, setQuery] =
     useState('');
-  const [refreshing, setRefreshing] =
-    useState(false);
   const [loading, setLoading] =
     useState(true);
+  const [refreshing, setRefreshing] =
+    useState(false);
   const [error, setError] = useState('');
-  const [metadataError, setMetadataError] =
-    useState('');
 
   const load = useCallback(async () => {
     setError('');
-    setMetadataError('');
 
     const fresh =
       await ensureFreshSession();
@@ -97,7 +71,7 @@ export default function Devices() {
 
     try {
       const ticketResult =
-        await api.zendeskAllTickets(
+        await loadZendeskTicketUniverse(
           token,
         );
 
@@ -105,23 +79,16 @@ export default function Devices() {
         ticketResult.tickets || [],
       );
 
-      const [
-        formResult,
-        fieldResult,
-      ] = await Promise.allSettled([
-        api.zendeskForms(token),
-        api.zendeskFields(token),
-      ]);
+      const metadata =
+        await Promise.allSettled([
+          api.zendeskFields(token),
+          api.zendeskForms(token),
+        ]);
 
-      if (
-        formResult.status ===
-        'fulfilled'
-      ) {
-        setForms(
-          formResult.value
-            .ticket_forms || [],
-        );
-      }
+      const [
+        fieldResult,
+        formResult,
+      ] = metadata;
 
       if (
         fieldResult.status ===
@@ -135,18 +102,17 @@ export default function Devices() {
 
       if (
         formResult.status ===
-          'rejected' ||
-        fieldResult.status ===
-          'rejected'
+        'fulfilled'
       ) {
-        setMetadataError(
-          'Some Zendesk product metadata could not be loaded.',
+        setForms(
+          formResult.value
+            .ticket_forms || [],
         );
       }
     } catch (e: any) {
       setError(
         e?.message ||
-          'Unable to load product health.',
+          'Unable to load Zendesk product data.',
       );
     } finally {
       setLoading(false);
@@ -162,9 +128,25 @@ export default function Devices() {
 
   async function refresh() {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+
+    try {
+      const fresh = await ensureFreshSession();
+      const token = fresh?.accessToken || session?.accessToken;
+
+      if (token) {
+        await forceZendeskDbSync(token);
+      }
+
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }
+
+  const mapping = useMemo(
+    () => detectedMapping(fields),
+    [fields],
+  );
 
   const rows = useMemo(
     () =>
@@ -176,79 +158,18 @@ export default function Devices() {
     [fields, forms, tickets],
   );
 
-  const mapping = useMemo(
-    () => detectedMapping(fields),
-    [fields],
-  );
-
   const filtered = useMemo(() => {
     const needle =
       query.trim().toLowerCase();
 
-    return rows.filter((row) => {
-      if (
-        needle &&
-        !row.device
+    return rows.filter(
+      (row) =>
+        !needle ||
+        row.device
           .toLowerCase()
-          .includes(needle)
-      ) {
-        return false;
-      }
-
-      if (
-        filter === 'with-cases'
-      ) {
-        return row.total > 0;
-      }
-
-      if (filter === 'faulty') {
-        return row.faulty > 0;
-      }
-
-      if (filter === 'rma') {
-        return row.rma > 0;
-      }
-
-      if (filter === 'rising') {
-        return (
-          (row.trendPct || 0) > 0
-        );
-      }
-
-      return true;
-    });
-  }, [filter, query, rows]);
-
-  const totals = useMemo(
-    () => ({
-      products: rows.length,
-      cases: rows.reduce(
-        (sum, row) =>
-          sum + row.total,
-        0,
-      ),
-      faulty: rows.reduce(
-        (sum, row) =>
-          sum + row.faulty,
-        0,
-      ),
-      rma: rows.reduce(
-        (sum, row) =>
-          sum + row.rma,
-        0,
-      ),
-    }),
-    [rows],
-  );
-
-  function openDevice(
-    name: string,
-  ) {
-    router.push({
-      pathname: '/device/[name]',
-      params: { name },
-    } as unknown as Href);
-  }
+          .includes(needle),
+    );
+  }, [query, rows]);
 
   return (
     <ScrollView
@@ -265,72 +186,41 @@ export default function Devices() {
     >
       <WorkspaceHeader />
 
-      <View style={s.hero}>
-        <View style={s.heroCopy}>
-          <Text style={s.eyebrow}>
-            ZENDESK PRODUCT HEALTH
-          </Text>
-          <Text style={s.title}>
-            Devices
-          </Text>
-          <Text style={s.caption}>
-            Atomos product custom fields
-            mapped to support load
-          </Text>
-        </View>
+      <Text style={s.eyebrow}>
+        ATOMOS PRODUCT HEALTH
+      </Text>
+      <Text style={s.title}>
+        Devices
+      </Text>
+      <Text style={s.caption}>
+        Device/Product custom field
+        grouped from Zendesk tickets
+      </Text>
 
-        <View style={s.live}>
-          <View style={s.liveDot} />
-          <Text style={s.liveText}>
-            LIVE
-          </Text>
-        </View>
-      </View>
-
-      <AppCard style={s.mappingCard}>
+      <AppCard style={s.mapping}>
         <Text style={s.mappingLabel}>
-          PRODUCT FIELD
+          DETECTED DEVICE FIELD
         </Text>
         <Text style={s.mappingValue}>
           {mapping.device?.title ||
-            'No product/device field detected'}
+            'Not detected'}
         </Text>
       </AppCard>
 
-      <View style={s.summaryGrid}>
-        <Summary
-          label="Products"
-          value={totals.products}
-        />
-        <Summary
-          label="Tickets"
-          value={totals.cases}
-        />
-        <Summary
-          label="Faulty"
-          value={totals.faulty}
-          accent
-        />
-        <Summary
-          label="RMA"
-          value={totals.rma}
-          accent
-        />
-      </View>
-
-      <View style={s.searchWrap}>
+      <View style={s.search}>
         <Ionicons
           name="search-outline"
-          size={19}
+          size={20}
           color={colors.muted}
         />
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search product / device"
-          placeholderTextColor={colors.muted}
-          style={s.searchInput}
-          autoCorrect={false}
+          placeholder="Search device or product"
+          placeholderTextColor={
+            colors.muted
+          }
+          style={s.input}
         />
         {query ? (
           <Pressable
@@ -347,50 +237,9 @@ export default function Devices() {
         ) : null}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={
-          false
-        }
-        contentContainerStyle={s.filters}
-      >
-        {FILTERS.map((item) => (
-          <Pressable
-            key={item.key}
-            onPress={() =>
-              setFilter(item.key)
-            }
-            style={[
-              s.filter,
-              filter === item.key &&
-                s.filterActive,
-            ]}
-          >
-            <Text
-              style={[
-                s.filterText,
-                filter === item.key &&
-                  s.filterTextActive,
-              ]}
-            >
-              {item.label}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      {metadataError ? (
-        <Text style={s.metadataError}>
-          {metadataError}
-        </Text>
-      ) : null}
-
       {error ? (
         <AppCard>
-          <Text style={s.errorTitle}>
-            Product health unavailable
-          </Text>
-          <Text style={s.errorText}>
+          <Text style={s.error}>
             {error}
           </Text>
         </AppCard>
@@ -401,15 +250,12 @@ export default function Devices() {
           <ActivityIndicator
             color={colors.primary}
           />
-          <Text style={s.loadingText}>
-            Loading Zendesk products…
-          </Text>
         </View>
       ) : (
         <>
           <View style={s.sectionRow}>
             <Text style={s.sectionTitle}>
-              Product health
+              Device-wise tickets
             </Text>
             <Text style={s.count}>
               {filtered.length}
@@ -421,58 +267,35 @@ export default function Devices() {
               key={row.device}
               row={row}
               onPress={() =>
-                openDevice(row.device)
+                router.push({
+                  pathname:
+                    '/device/[name]',
+                  params: {
+                    name: row.device,
+                  },
+                } as unknown as Href)
               }
             />
           ))}
 
           {!filtered.length &&
           !error ? (
-            <View style={s.empty}>
-              <Ionicons
-                name="hardware-chip-outline"
-                size={34}
-                color={colors.muted}
-              />
+            <AppCard>
               <Text style={s.emptyTitle}>
-                No product values found
+                No Device values grouped
               </Text>
               <Text style={s.emptyText}>
-                Check the Zendesk custom
-                field mapping shown above.
+                Detected field:{' '}
+                {mapping.device?.title ||
+                  'none'}. Ticket detail
+                custom fields remain the
+                source of truth.
               </Text>
-            </View>
+            </AppCard>
           ) : null}
         </>
       )}
     </ScrollView>
-  );
-}
-
-function Summary({
-  label,
-  value,
-  accent = false,
-}: {
-  label: string;
-  value: number;
-  accent?: boolean;
-}) {
-  return (
-    <View style={s.summary}>
-      <Text
-        style={[
-          s.summaryValue,
-          accent &&
-            s.summaryValueAccent,
-        ]}
-      >
-        {value}
-      </Text>
-      <Text style={s.summaryLabel}>
-        {label}
-      </Text>
-    </View>
   );
 }
 
@@ -485,14 +308,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 8,
     paddingBottom: 120,
-  },
-  hero: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  heroCopy: {
-    flex: 1,
   },
   eyebrow: {
     color: colors.primary,
@@ -509,39 +324,16 @@ const s = StyleSheet.create({
   caption: {
     color: colors.muted,
     fontSize: 11,
-    lineHeight: 16,
     marginTop: 5,
   },
-  live: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.lime,
-  },
-  liveText: {
-    color: colors.primary,
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  mappingCard: {
-    marginTop: 16,
+  mapping: {
+    marginTop: 14,
     backgroundColor: '#F5FBF8',
   },
   mappingLabel: {
     color: colors.muted,
     fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 0.8,
   },
   mappingValue: {
     color: colors.primary,
@@ -549,104 +341,34 @@ const s = StyleSheet.create({
     fontWeight: '900',
     marginTop: 5,
   },
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: 7,
-    marginTop: 10,
-  },
-  summary: {
-    flex: 1,
-    minHeight: 75,
-    borderRadius: 15,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 11,
-  },
-  summaryValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  summaryValueAccent: {
-    color: colors.primary,
-  },
-  summaryLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  searchWrap: {
+  search: {
     minHeight: 52,
-    marginTop: 14,
+    marginTop: 12,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 9,
   },
-  searchInput: {
+  input: {
     flex: 1,
     color: colors.text,
     fontSize: 12,
+  },
+  error: {
+    color: colors.danger,
     fontWeight: '700',
   },
-  filters: {
-    gap: 8,
-    paddingVertical: 13,
-  },
-  filter: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  filterActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterText: {
-    color: colors.muted,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  metadataError: {
-    color: colors.warning,
-    fontSize: 9,
-    marginBottom: 8,
-  },
-  errorTitle: {
-    color: colors.danger,
-    fontWeight: '900',
-  },
-  errorText: {
-    color: colors.text,
-    fontSize: 11,
-    marginTop: 5,
-  },
   loading: {
-    alignItems: 'center',
-    paddingVertical: 70,
-  },
-  loadingText: {
-    color: colors.muted,
-    fontSize: 11,
-    marginTop: 10,
+    paddingVertical: 60,
   },
   sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 5,
+    marginTop: 15,
     marginBottom: 10,
   },
   sectionTitle: {
@@ -656,26 +378,21 @@ const s = StyleSheet.create({
   },
   count: {
     color: colors.primary,
-    fontSize: 10,
-    fontWeight: '900',
     backgroundColor: colors.primarySoft,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: 60,
+    fontSize: 10,
+    fontWeight: '900',
   },
   emptyTitle: {
     color: colors.text,
     fontWeight: '900',
-    marginTop: 12,
   },
   emptyText: {
     color: colors.muted,
     fontSize: 10,
-    textAlign: 'center',
+    lineHeight: 15,
     marginTop: 5,
   },
 });

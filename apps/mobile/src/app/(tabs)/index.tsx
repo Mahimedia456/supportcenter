@@ -16,6 +16,7 @@ import { MetricCard } from '@/components/overview/MetricCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
+import { loadZendeskTicketUniverse, forceZendeskDbSync } from '@/lib/zendesk-source';
 import {
   overviewMetrics,
   ticketsForPeriod,
@@ -88,7 +89,7 @@ export default function Overview() {
       // Upgrade the screen with a larger dataset in the
       // background. If this endpoint fails, keep recent data.
       const analyticsResult =
-        await api.zendeskAllTickets(
+        await loadZendeskTicketUniverse(
           token,
         );
 
@@ -122,8 +123,19 @@ export default function Overview() {
 
   async function refresh() {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+
+    try {
+      const fresh = await ensureFreshSession();
+      const token = fresh?.accessToken || session?.accessToken;
+
+      if (token) {
+        await forceZendeskDbSync(token);
+      }
+
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const periodTickets = useMemo(

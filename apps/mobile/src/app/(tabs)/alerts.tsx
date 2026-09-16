@@ -23,6 +23,7 @@ import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
+import { forceZendeskDbSync } from '@/lib/zendesk-source';
 import {
   buildManagerAlerts,
   type ManagerAlert,
@@ -214,8 +215,19 @@ export default function Alerts() {
 
   async function refresh() {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+
+    try {
+      const fresh = await ensureFreshSession();
+      const token = fresh?.accessToken || session?.accessToken;
+
+      if (token) {
+        await forceZendeskDbSync(token);
+      }
+
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const alerts = useMemo(

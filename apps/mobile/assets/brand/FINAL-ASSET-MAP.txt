@@ -1,0 +1,28 @@
+FINAL SUPPORT COMMAND CENTER ASSET MAP
+
+Launcher icon:
+  assets/brand/app-icon.png
+
+Android adaptive:
+  assets/brand/adaptive-icon-foreground.png
+  assets/brand/adaptive-icon-background.png
+  assets/brand/adaptive-icon-monochrome.png
+
+Notification:
+  assets/brand/notification-icon.png
+
+UI mark:
+  assets/brand/final/support-command-center-mark.png
+
+Native + animated splash:
+  assets/brand/final/support-command-center-splash-lockup.png
+
+Store/web:
+  assets/brand/final/icons/app-store-icon.png
+  assets/brand/final/icons/play-store-icon.png
+  assets/brand/final/icons/favicon.png
+  assets/brand/final/icons/ios-home-icon-180.png
+
+DO NOT USE:
+  support-command-center-logo-transparent.png
+  support-command-center-wordmark*

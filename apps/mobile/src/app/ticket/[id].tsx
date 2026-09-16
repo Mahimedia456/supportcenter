@@ -9,6 +9,8 @@ import {
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -90,6 +92,10 @@ export default function TicketDetailScreen() {
   const customRows = useMemo(() => ticket ? ticketCustomFieldRows(ticket,fields) : [],[ticket,fields]);
 
   return (
+    <SafeAreaView
+      style={s.safe}
+      edges={['top', 'left', 'right']}
+    >
     <ScrollView
       style={s.screen}
       contentContainerStyle={s.content}
@@ -103,7 +109,11 @@ export default function TicketDetailScreen() {
     >
       <View style={s.header}>
         <Pressable onPress={() => router.back()} style={s.back}>
-          <Text style={s.backText}>‹</Text>
+          <Ionicons
+            name="chevron-back"
+            size={23}
+            color={colors.text}
+          />
         </Pressable>
         <View style={s.headerText}>
           <Text style={s.eyebrow}>READ-ONLY ZENDESK TICKET</Text>
@@ -227,10 +237,15 @@ export default function TicketDetailScreen() {
         </>
       ) : null}
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,

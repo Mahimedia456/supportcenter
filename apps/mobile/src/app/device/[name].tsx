@@ -17,8 +17,11 @@ import {
   router,
   useLocalSearchParams,
 } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppCard } from '@/components/AppCard';
 import { TicketCard } from '@/components/tickets/TicketCard';
+import { ViewDeviceTicketsButton } from '@/components/devices/ViewDeviceTicketsButton';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import * as api from '@/lib/api';
@@ -27,6 +30,7 @@ import {
   deviceTickets,
   regionsForDevice,
   topIssuesForDevice,
+  type DeviceBreakdownRow,
 } from '@/lib/device-health';
 
 export default function DeviceDetail() {
@@ -37,7 +41,10 @@ export default function DeviceDetail() {
     ? params.name[0]
     : params.name || 'Unknown device';
 
-  const { session, ensureFreshSession } = useAuth();
+  const {
+    session,
+    ensureFreshSession,
+  } = useAuth();
 
   const [tickets, setTickets] =
     useState<api.ZendeskTicket[]>([]);
@@ -45,38 +52,73 @@ export default function DeviceDetail() {
     useState<api.ZendeskForm[]>([]);
   const [fields, setFields] =
     useState<api.ZendeskTicketField[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [agents, setAgents] =
+    useState<api.ZendeskUser[]>([]);
+  const [groups, setGroups] =
+    useState<api.ZendeskGroup[]>([]);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+  const [loading, setLoading] =
+    useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
 
-    const fresh = await ensureFreshSession();
+    const fresh =
+      await ensureFreshSession();
     const token =
-      fresh?.accessToken || session?.accessToken;
+      fresh?.accessToken ||
+      session?.accessToken;
 
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
-      const [ticketResult, formResult, fieldResult] =
-        await Promise.all([
-          api.zendeskAnalyticsTickets(token, 30),
-          api.zendeskForms(token),
-          api.zendeskFields(token),
-        ]);
+      const [
+        ticketResult,
+        formResult,
+        fieldResult,
+        agentResult,
+        groupResult,
+      ] = await Promise.all([
+        api.zendeskAllTickets(token),
+        api.zendeskForms(token),
+        api.zendeskFields(token),
+        api.zendeskAgents(token),
+        api.zendeskGroups(token),
+      ]);
 
-      setTickets(ticketResult.tickets || []);
-      setForms(formResult.ticket_forms || []);
-      setFields(fieldResult.ticket_fields || []);
+      setTickets(
+        ticketResult.tickets || [],
+      );
+      setForms(
+        formResult.ticket_forms || [],
+      );
+      setFields(
+        fieldResult.ticket_fields || [],
+      );
+      setAgents(
+        agentResult.users || [],
+      );
+      setGroups(
+        groupResult.groups || [],
+      );
     } catch (e: any) {
       setError(
-        e?.message || 'Unable to load device detail.',
+        e?.message ||
+          'Unable to load device detail.',
       );
     } finally {
       setLoading(false);
     }
-  }, [ensureFreshSession, session?.accessToken]);
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     void load();
@@ -90,20 +132,34 @@ export default function DeviceDetail() {
 
   const row = useMemo(
     () =>
-      buildDeviceHealth(tickets, fields, forms).find(
+      buildDeviceHealth(
+        tickets,
+        fields,
+        forms,
+      ).find(
         (item) =>
-          item.device.toLowerCase() === name.toLowerCase(),
+          item.device.toLowerCase() ===
+          name.toLowerCase(),
       ),
     [fields, forms, name, tickets],
   );
 
-  const related = useMemo(
+  const related = useMemo<
+    api.ZendeskTicket[]
+  >(
     () =>
-      deviceTickets(tickets, fields, forms, name),
+      deviceTickets(
+        tickets,
+        fields,
+        forms,
+        name,
+      ),
     [fields, forms, name, tickets],
   );
 
-  const issues = useMemo(
+  const issues = useMemo<
+    DeviceBreakdownRow[]
+  >(
     () =>
       topIssuesForDevice(
         tickets,
@@ -114,7 +170,9 @@ export default function DeviceDetail() {
     [fields, forms, name, tickets],
   );
 
-  const regions = useMemo(
+  const regions = useMemo<
+    DeviceBreakdownRow[]
+  >(
     () =>
       regionsForDevice(
         tickets,
@@ -134,184 +192,297 @@ export default function DeviceDetail() {
 
   const maxIssue = Math.max(
     1,
-    ...issues.map((item) => item.count),
+    ...issues.map(
+      (item: DeviceBreakdownRow) =>
+        item.count,
+    ),
   );
+
   const maxRegion = Math.max(
     1,
-    ...regions.map((item) => item.count),
+    ...regions.map(
+      (item: DeviceBreakdownRow) =>
+        item.count,
+    ),
   );
 
   return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={refresh}
-          tintColor={colors.primary}
-        />
-      }
+    <SafeAreaView
+      style={s.safe}
+      edges={['top', 'left', 'right']}
     >
-      <View style={s.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={s.back}
-        >
-          <Text style={s.backText}>‹</Text>
-        </Pressable>
-
-        <View style={s.headerText}>
-          <Text style={s.eyebrow}>DEVICE HEALTH</Text>
-          <Text style={s.title} numberOfLines={2}>
-            {name}
-          </Text>
-        </View>
-      </View>
-
-      {loading ? (
-        <View style={s.loading}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={s.loadingText}>
-            Loading device health…
-          </Text>
-        </View>
-      ) : null}
-
-      {error ? (
-        <AppCard>
-          <Text style={s.errorTitle}>
-            Device data unavailable
-          </Text>
-          <Text style={s.errorText}>{error}</Text>
-        </AppCard>
-      ) : null}
-
-      {!loading && !error && row ? (
-        <>
-          <View style={s.kpiGrid}>
-            <Kpi label="Cases" value={row.total} />
-            <Kpi label="Open" value={row.open} />
-            <Kpi
-              label="Faulty"
-              value={row.faulty}
-              accent
+      <ScrollView
+        style={s.screen}
+        contentContainerStyle={s.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <View style={s.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [
+              s.back,
+              pressed && s.backPressed,
+            ]}
+            hitSlop={10}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={23}
+              color={colors.text}
             />
-            <Kpi label="RMA" value={row.rma} />
-          </View>
+          </Pressable>
 
-          <AppCard style={s.trendCard}>
-            <View>
-              <Text style={s.trendLabel}>
-                LAST 7 DAYS
-              </Text>
-              <Text style={s.trendValue}>
-                {row.last7Days}
-              </Text>
-            </View>
-
-            <View style={s.trendDivider} />
-
-            <View>
-              <Text style={s.trendLabel}>
-                PREVIOUS 7 DAYS
-              </Text>
-              <Text style={s.trendValue}>
-                {row.previous7Days}
-              </Text>
-            </View>
-
-            <View style={s.trendBadge}>
-              <Text style={s.trendBadgeText}>
-                {row.trendPct === null
-                  ? '—'
-                  : `${row.trendPct > 0 ? '+' : ''}${row.trendPct}%`}
-              </Text>
-            </View>
-          </AppCard>
-
-          <SectionTitle
-            title="Top faults / issues"
-            caption="What customers are reporting"
-          />
-
-          <AppCard>
-            {issues.slice(0, 10).map((item, index) => (
-              <BarRow
-                key={item.label}
-                label={item.label}
-                value={item.count}
-                max={maxIssue}
-                last={
-                  index ===
-                  Math.min(issues.length, 10) - 1
-                }
-              />
-            ))}
-
-            {!issues.length ? (
-              <Text style={s.emptyText}>
-                No issue field data available.
-              </Text>
-            ) : null}
-          </AppCard>
-
-          <SectionTitle
-            title="Regions"
-            caption="Where this device is generating support load"
-          />
-
-          <AppCard>
-            {regions
-              .slice(0, 10)
-              .map((item, index) => (
-                <BarRow
-                  key={item.label}
-                  label={item.label}
-                  value={item.count}
-                  max={maxRegion}
-                  cyan
-                  last={
-                    index ===
-                    Math.min(regions.length, 10) - 1
-                  }
-                />
-              ))}
-          </AppCard>
-
-          <View style={s.relatedHeader}>
-            <View>
-              <Text style={s.relatedEyebrow}>
-                READ-ONLY TICKETS
-              </Text>
-              <Text style={s.relatedTitle}>
-                Related tickets
-              </Text>
-            </View>
-
-            <Text style={s.relatedCount}>
-              {related.length}
+          <View style={s.headerText}>
+            <Text style={s.eyebrow}>
+              DEVICE HEALTH
+            </Text>
+            <Text
+              style={s.title}
+              numberOfLines={2}
+            >
+              {name}
             </Text>
           </View>
+        </View>
 
-          {related.slice(0, 40).map((ticket) => (
-            <TicketCard
-              key={ticket.id}
-              ticket={ticket}
-              onPress={() => openTicket(ticket.id)}
+        {loading ? (
+          <View style={s.loading}>
+            <ActivityIndicator
+              color={colors.primary}
             />
-          ))}
+            <Text style={s.loadingText}>
+              Loading device health…
+            </Text>
+          </View>
+        ) : null}
 
-          {!related.length ? (
-            <View style={s.empty}>
-              <Text style={s.emptyTitle}>
-                No related tickets found
+        {error ? (
+          <AppCard>
+            <Text style={s.errorTitle}>
+              Device data unavailable
+            </Text>
+            <Text style={s.errorText}>
+              {error}
+            </Text>
+          </AppCard>
+        ) : null}
+
+        {!loading &&
+        !error &&
+        row ? (
+          <>
+            <View style={s.kpiGrid}>
+              <Kpi
+                label="Tickets"
+                value={row.total}
+              />
+              <Kpi
+                label="Open"
+                value={row.open}
+              />
+              <Kpi
+                label="Faulty"
+                value={row.faulty}
+                accent
+              />
+              <Kpi
+                label="RMA"
+                value={row.rma}
+              />
+            </View>
+
+            <AppCard
+              style={s.trendCard}
+            >
+              <View>
+                <Text
+                  style={s.trendLabel}
+                >
+                  LAST 7 DAYS
+                </Text>
+                <Text
+                  style={s.trendValue}
+                >
+                  {row.last7Days}
+                </Text>
+              </View>
+
+              <View
+                style={s.trendDivider}
+              />
+
+              <View>
+                <Text
+                  style={s.trendLabel}
+                >
+                  PREVIOUS 7 DAYS
+                </Text>
+                <Text
+                  style={s.trendValue}
+                >
+                  {row.previous7Days}
+                </Text>
+              </View>
+
+              <View
+                style={s.trendBadge}
+              >
+                <Text
+                  style={
+                    s.trendBadgeText
+                  }
+                >
+                  {row.trendPct ===
+                  null
+                    ? '—'
+                    : `${row.trendPct > 0 ? '+' : ''}${row.trendPct}%`}
+                </Text>
+              </View>
+            </AppCard>
+
+            <SectionTitle
+              title="Top faults / issues"
+              caption="Derived from Fault Category, Category and Support Type"
+            />
+
+            <AppCard>
+              {issues
+                .slice(0, 10)
+                .map(
+                  (
+                    item: DeviceBreakdownRow,
+                    index: number,
+                  ) => (
+                    <BarRow
+                      key={item.label}
+                      label={item.label}
+                      value={item.count}
+                      max={maxIssue}
+                      last={
+                        index ===
+                        Math.min(
+                          issues.length,
+                          10,
+                        ) -
+                          1
+                      }
+                    />
+                  ),
+                )}
+
+              {!issues.length ? (
+                <Text
+                  style={s.emptyText}
+                >
+                  No fault/category data
+                  for this device.
+                </Text>
+              ) : null}
+            </AppCard>
+
+            <SectionTitle
+              title="Regions"
+              caption="Where this product is generating support load"
+            />
+
+            <AppCard>
+              {regions
+                .slice(0, 10)
+                .map(
+                  (
+                    item: DeviceBreakdownRow,
+                    index: number,
+                  ) => (
+                    <BarRow
+                      key={item.label}
+                      label={item.label}
+                      value={item.count}
+                      max={maxRegion}
+                      cyan
+                      last={
+                        index ===
+                        Math.min(
+                          regions.length,
+                          10,
+                        ) -
+                          1
+                      }
+                    />
+                  ),
+                )}
+            </AppCard>
+
+            <View
+              style={s.relatedHeader}
+            >
+              <View>
+                <Text
+                  style={
+                    s.relatedEyebrow
+                  }
+                >
+                  READ-ONLY TICKETS
+                </Text>
+                <Text
+                  style={
+                    s.relatedTitle
+                  }
+                >
+                  Related tickets
+                </Text>
+              </View>
+
+              <Text
+                style={s.relatedCount}
+              >
+                {related.length}
               </Text>
             </View>
-          ) : null}
-        </>
-      ) : null}
-    </ScrollView>
+
+            {related
+              .slice(0, 40)
+              .map(
+                (
+                  ticket: api.ZendeskTicket,
+                ) => (
+                  <TicketCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    agents={agents}
+                    groups={groups}
+                    forms={forms}
+                    onPress={() =>
+                      openTicket(
+                        ticket.id,
+                      )
+                    }
+                  />
+                ),
+              )}
+          </>
+        ) : null}
+
+        {!loading &&
+        !error &&
+        !row ? (
+          <AppCard>
+            <Text style={s.emptyTitle}>
+              Device not found
+            </Text>
+            <Text style={s.emptyText}>
+              No ticket/custom-field data
+              matched {name}.
+            </Text>
+          </AppCard>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -329,12 +500,15 @@ function Kpi({
       <Text
         style={[
           s.kpiValue,
-          accent && s.kpiValueAccent,
+          accent &&
+            s.kpiValueAccent,
         ]}
       >
         {value}
       </Text>
-      <Text style={s.kpiLabel}>{label}</Text>
+      <Text style={s.kpiLabel}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -348,8 +522,14 @@ function SectionTitle({
 }) {
   return (
     <View style={s.sectionHeader}>
-      <Text style={s.sectionTitle}>{title}</Text>
-      <Text style={s.sectionCaption}>{caption}</Text>
+      <Text style={s.sectionTitle}>
+        {title}
+      </Text>
+      <Text
+        style={s.sectionCaption}
+      >
+        {caption}
+      </Text>
     </View>
   );
 }
@@ -375,8 +555,12 @@ function BarRow({
       ]}
     >
       <View style={s.barTop}>
-        <Text style={s.barLabel}>{label}</Text>
-        <Text style={s.barValue}>{value}</Text>
+        <Text style={s.barLabel}>
+          {label}
+        </Text>
+        <Text style={s.barValue}>
+          {value}
+        </Text>
       </View>
 
       <View style={s.barTrack}>
@@ -398,14 +582,18 @@ function BarRow({
 }
 
 const s = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
   content: {
     padding: 18,
-    paddingTop: 22,
-    paddingBottom: 80,
+    paddingTop: 10,
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
@@ -416,18 +604,15 @@ const s = StyleSheet.create({
   back: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 15,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: {
-    color: colors.text,
-    fontSize: 34,
-    lineHeight: 36,
-    marginTop: -3,
+  backPressed: {
+    backgroundColor: colors.primarySoft,
   },
   headerText: {
     flex: 1,
@@ -599,16 +784,14 @@ const s = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
   },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
   emptyTitle: {
-    color: colors.muted,
-    fontWeight: '800',
+    color: colors.text,
+    fontWeight: '900',
   },
   emptyText: {
     color: colors.muted,
+    fontSize: 10,
+    lineHeight: 15,
     paddingVertical: 10,
   },
 });

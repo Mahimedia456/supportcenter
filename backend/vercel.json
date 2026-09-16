@@ -17,5 +17,11 @@
       "source": "/zendesk/:path*",
       "destination": "/api/index"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/zendesk-hourly-sync",
+      "schedule": "0 * * * *"
+    }
   ]
 }
