@@ -6,6 +6,9 @@ export type SupportPeriodPreset =
   | '7'
   | '30'
   | '90'
+  | 'month0'
+  | 'month1'
+  | 'month2'
   | 'custom';
 
 export type SupportPeriod = {
@@ -30,7 +33,34 @@ function endOfDay(value: Date) {
   return date;
 }
 
-export function supportPeriodRange(period: SupportPeriod) {
+function monthRange(offset: number) {
+  const now = new Date();
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth() - offset,
+    1,
+  );
+
+  const naturalEnd = new Date(
+    now.getFullYear(),
+    now.getMonth() - offset + 1,
+    0,
+  );
+
+  const end =
+    offset === 0 && naturalEnd > now
+      ? now
+      : naturalEnd;
+
+  return {
+    start: startOfDay(start),
+    end: endOfDay(end),
+  };
+}
+
+export function supportPeriodRange(
+  period: SupportPeriod,
+) {
   const now = new Date();
 
   if (period.preset === 'today') {
@@ -40,16 +70,42 @@ export function supportPeriodRange(period: SupportPeriod) {
     };
   }
 
-  if (period.preset === 'custom' && period.start && period.end) {
+  if (period.preset === 'month0') {
+    return monthRange(0);
+  }
+
+  if (period.preset === 'month1') {
+    return monthRange(1);
+  }
+
+  if (period.preset === 'month2') {
+    return monthRange(2);
+  }
+
+  if (
+    period.preset === 'custom' &&
+    period.start &&
+    period.end
+  ) {
     return {
-      start: startOfDay(new Date(period.start)),
-      end: endOfDay(new Date(period.end)),
+      start: startOfDay(
+        new Date(period.start),
+      ),
+      end: endOfDay(
+        new Date(period.end),
+      ),
     };
   }
 
-  const days = Number(period.preset || 90);
+  const days =
+    Number(period.preset || 90);
+
   const start = new Date(now);
-  start.setDate(start.getDate() - Math.max(1, days) + 1);
+  start.setDate(
+    start.getDate() -
+      Math.max(1, days) +
+      1,
+  );
 
   return {
     start: startOfDay(start),
@@ -61,17 +117,56 @@ export function filterTicketsBySupportPeriod(
   tickets: ZendeskTicket[],
   period: SupportPeriod,
 ) {
-  const range = supportPeriodRange(period);
+  const range =
+    supportPeriodRange(period);
 
-  return tickets.filter((ticket) => {
-    const raw = ticket.created_at || ticket.updated_at;
-    if (!raw) return false;
+  return tickets.filter(
+    (ticket) => {
+      const raw =
+        ticket.created_at ||
+        ticket.updated_at;
 
-    const time = new Date(raw).getTime();
+      if (!raw) {
+        return false;
+      }
 
-    return (
-      time >= range.start.getTime() &&
-      time <= range.end.getTime()
+      const time =
+        new Date(raw).getTime();
+
+      return (
+        time >=
+          range.start.getTime() &&
+        time <=
+          range.end.getTime()
+      );
+    },
+  );
+}
+
+export function lastThreeMonthLabels() {
+  const format =
+    new Intl.DateTimeFormat(
+      'en',
+      {
+        month: 'short',
+      },
     );
-  });
+
+  const now = new Date();
+
+  return [0, 1, 2].map(
+    (offset) => {
+      const date =
+        new Date(
+          now.getFullYear(),
+          now.getMonth() -
+            offset,
+          1,
+        );
+
+      return format.format(
+        date,
+      );
+    },
+  );
 }
