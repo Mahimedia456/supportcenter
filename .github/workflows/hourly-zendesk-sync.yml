@@ -1,0 +1,40 @@
+
+name: Hourly Zendesk Sync
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Zendesk DB sync
+        env:
+          SUPPORTCENTER_CRON_SECRET: ${{ secrets.SUPPORTCENTER_CRON_SECRET }}
+        run: |
+          set -e
+
+          if [ -z "$SUPPORTCENTER_CRON_SECRET" ]; then
+            echo "Missing GitHub secret: SUPPORTCENTER_CRON_SECRET"
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl \
+            --silent \
+            --show-error \
+            --output response.json \
+            --write-out "%{http_code}" \
+            --request GET \
+            --header "Authorization: Bearer $SUPPORTCENTER_CRON_SECRET" \
+            "https://supportcenter-kappa.vercel.app/api/zendesk-hourly-sync")
+
+          cat response.json
+          echo ""
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            exit 1
+          fi
