@@ -50,7 +50,8 @@ async function request<T>(
     },
   });
 
-  const body: any = await response.json().catch(() => ({}));
+  const body: any =
+    await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(
@@ -92,7 +93,7 @@ export async function getZendeskDbSnapshot(
   }
 
   inflight = request<ZendeskDbSnapshot>(
-    '/zendesk/cache/snapshot',
+    '/api/zendesk-cache-snapshot',
     token,
   );
 
@@ -106,9 +107,11 @@ export async function getZendeskDbSnapshot(
   }
 }
 
-export async function syncZendeskDb(token: string) {
+export async function syncZendeskDb(
+  token: string,
+) {
   const result = await request<ZendeskDbSnapshot>(
-    '/zendesk/cache/sync',
+    '/api/zendesk-cache-sync',
     token,
     'POST',
   );
