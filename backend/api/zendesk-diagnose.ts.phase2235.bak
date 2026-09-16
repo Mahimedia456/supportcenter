@@ -1,3 +1,7 @@
+import type {
+  any,
+  any,
+
 function clean(value: string) {
   return value
     .trim()
