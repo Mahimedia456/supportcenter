@@ -1,7 +1,6 @@
 import type {
-  VercelRequest,
-  VercelResponse,
-} from '@vercel/node';
+  any,
+  any,
 
 function clean(value: string) {
   return value
@@ -63,8 +62,8 @@ async function check(
 }
 
 export default async function handler(
-  _req: VercelRequest,
-  res: VercelResponse,
+  _req: any,
+  res: any,
 ) {
   const subdomain = clean(
     String(
