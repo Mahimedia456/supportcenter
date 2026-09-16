@@ -1,575 +1,365 @@
-import React, {
-  useState,
-} from 'react';
+
+import React, { useState } from 'react';
 import {
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors } from '@/constants/theme';
-import type {
-  OverviewPeriod,
-} from '@/lib/overview';
+
+type Props = {
+  period?: any;
+  value?: any;
+  from?: Date;
+  to?: Date;
+  onPreset?: (value: any) => void;
+  onChange?: (value: any) => void;
+  onCustom?: (from: Date, to: Date) => void;
+};
 
 const PRESETS: Array<{
-  key: OverviewPeriod;
+  key: any;
   label: string;
 }> = [
-  {
-    key: 'today',
-    label: 'Today',
-  },
-  {
-    key: '7d',
-    label: '7 Days',
-  },
-  {
-    key: '30d',
-    label: '30 Days',
-  },
-  {
-    key: 'all',
-    label: 'All',
-  },
+  { key: 'today', label: 'Today' },
+  { key: '7', label: '7 Days' },
+  { key: '30', label: '30 Days' },
+  { key: '90', label: '90 Days' },
 ];
-
-const fmt = (date: Date) =>
-  date.toLocaleDateString(
-    undefined,
-    {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    },
-  );
 
 export function OverviewDateFilter({
   period,
+  value,
   from,
   to,
   onPreset,
+  onChange,
   onCustom,
-}: {
-  period: OverviewPeriod;
-  from: Date;
-  to: Date;
-  onPreset: (
-    period: OverviewPeriod,
-  ) => void;
-  onCustom: (
-    from: Date,
-    to: Date,
-  ) => void;
-}) {
-  const [open, setOpen] =
-    useState(false);
-  const [draftFrom, setDraftFrom] =
-    useState(from);
-  const [draftTo, setDraftTo] =
-    useState(to);
-  const [picker, setPicker] =
-    useState<'from' | 'to' | null>(
-      null,
+}: Props) {
+  const selected = period ?? value ?? '90';
+
+  const [open, setOpen] = useState(false);
+
+  const [localFrom, setLocalFrom] =
+    useState<Date>(
+      from ??
+        new Date(
+          Date.now() -
+            6 * 24 * 60 * 60 * 1000,
+        ),
     );
 
-  function chooseMonth(
-    offset: number,
-  ) {
-    const now = new Date();
-
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth() - offset,
-      1,
+  const [localTo, setLocalTo] =
+    useState<Date>(
+      to ?? new Date(),
     );
 
-    const end = new Date(
-      start.getFullYear(),
-      start.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-      999,
-    );
-
-    setDraftFrom(start);
-    setDraftTo(
-      end.getTime() >
-        Date.now()
-        ? new Date()
-        : end,
-    );
-  }
-
-  function apply() {
-    let a = draftFrom;
-    let b = draftTo;
-
-    if (
-      a.getTime() >
-      b.getTime()
-    ) {
-      [a, b] = [b, a];
+  const emitPreset = (next: any) => {
+    if (onPreset) {
+      onPreset(next);
+      return;
     }
 
-    onCustom(a, b);
+    onChange?.(next);
+  };
+
+  const applyCustom = () => {
+    const oldest = new Date();
+    oldest.setHours(0, 0, 0, 0);
+    oldest.setDate(
+      oldest.getDate() - 89,
+    );
+
+    const now = new Date();
+
+    const safeFrom =
+      localFrom < oldest
+        ? oldest
+        : localFrom;
+
+    const safeTo =
+      localTo > now
+        ? now
+        : localTo;
+
+    onCustom?.(
+      safeFrom,
+      safeTo,
+    );
+
     setOpen(false);
-  }
+  };
 
   return (
     <>
-      <View style={s.row}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            s.tabs
-          }
-          style={s.tabsScroll}
-        >
-          {PRESETS.map((item) => (
-            <Pressable
-              key={item.key}
-              onPress={() =>
-                onPreset(item.key)
-              }
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          s.row
+        }
+      >
+        {PRESETS.map((item) => (
+          <Pressable
+            key={String(item.key)}
+            onPress={() =>
+              emitPreset(item.key)
+            }
+            style={[
+              s.chip,
+              selected ===
+                item.key &&
+                s.active,
+            ]}
+          >
+            <Text
               style={[
-                s.tab,
-                period === item.key &&
-                  s.tabActive,
+                s.text,
+                selected ===
+                  item.key &&
+                  s.activeText,
               ]}
             >
-              <Text
-                style={[
-                  s.text,
-                  period ===
-                    item.key &&
-                    s.textActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
 
         <Pressable
-          onPress={() => {
-            setDraftFrom(from);
-            setDraftTo(to);
-            setOpen(true);
-          }}
+          onPress={() =>
+            setOpen(true)
+          }
           style={[
-            s.filter,
-            period === 'custom' &&
-              s.filterActive,
+            s.icon,
+            selected ===
+              'custom' &&
+              s.active,
           ]}
         >
           <Ionicons
             name="options-outline"
-            size={21}
+            size={17}
             color={
-              period === 'custom'
+              selected ===
+              'custom'
                 ? '#FFFFFF'
                 : colors.primary
             }
           />
         </Pressable>
-      </View>
+      </ScrollView>
 
       <Modal
-        visible={open}
         transparent
+        visible={open}
         animationType="fade"
         onRequestClose={() =>
           setOpen(false)
         }
       >
-        <Pressable
-          style={s.backdrop}
-          onPress={() =>
-            setOpen(false)
-          }
-        >
-          <Pressable
-            style={s.sheet}
-            onPress={() =>
-              undefined
-            }
-          >
-            <View style={s.handle} />
+        <View style={s.overlay}>
+          <View style={s.modal}>
+            <Text
+              style={s.modalTitle}
+            >
+              Custom period
+            </Text>
 
-            <View style={s.sheetHead}>
-              <View>
-                <Text style={s.title}>
-                  Date range
-                </Text>
-                <Text
-                  style={s.caption}
-                >
-                  Select day, month and
-                  year
-                </Text>
-              </View>
+            <Text
+              style={
+                s.modalCaption
+              }
+            >
+              Reporting is limited
+              to the last 90 days.
+            </Text>
 
+            <Text style={s.label}>
+              From
+            </Text>
+
+            <DateTimePicker
+              value={localFrom}
+              mode="date"
+              maximumDate={
+                new Date()
+              }
+              onChange={(
+                _,
+                date,
+              ) => {
+                if (date) {
+                  setLocalFrom(
+                    date,
+                  );
+                }
+              }}
+            />
+
+            <Text style={s.label}>
+              To
+            </Text>
+
+            <DateTimePicker
+              value={localTo}
+              mode="date"
+              maximumDate={
+                new Date()
+              }
+              onChange={(
+                _,
+                date,
+              ) => {
+                if (date) {
+                  setLocalTo(date);
+                }
+              }}
+            />
+
+            <View
+              style={s.actions}
+            >
               <Pressable
                 onPress={() =>
                   setOpen(false)
                 }
-                style={s.close}
-              >
-                <Ionicons
-                  name="close"
-                  size={20}
-                  color={colors.text}
-                />
-              </Pressable>
-            </View>
-
-            <View style={s.months}>
-              {[0, 1, 2].map(
-                (offset) => {
-                  const date =
-                    new Date();
-
-                  date.setMonth(
-                    date.getMonth() -
-                      offset,
-                  );
-
-                  return (
-                    <Pressable
-                      key={offset}
-                      onPress={() =>
-                        chooseMonth(
-                          offset,
-                        )
-                      }
-                      style={s.month}
-                    >
-                      <Text
-                        style={
-                          s.monthText
-                        }
-                      >
-                        {date.toLocaleDateString(
-                          undefined,
-                          {
-                            month:
-                              'short',
-                            year:
-                              'numeric',
-                          },
-                        )}
-                      </Text>
-                    </Pressable>
-                  );
-                },
-              )}
-            </View>
-
-            <View style={s.dateGrid}>
-              <Pressable
-                onPress={() =>
-                  setPicker('from')
-                }
-                style={s.dateBox}
+                style={s.cancel}
               >
                 <Text
-                  style={s.dateLabel}
+                  style={
+                    s.cancelText
+                  }
                 >
-                  FROM
-                </Text>
-                <Text
-                  style={s.dateValue}
-                >
-                  {fmt(draftFrom)}
+                  Cancel
                 </Text>
               </Pressable>
 
               <Pressable
-                onPress={() =>
-                  setPicker('to')
+                onPress={
+                  applyCustom
                 }
-                style={s.dateBox}
+                style={s.apply}
               >
                 <Text
-                  style={s.dateLabel}
+                  style={
+                    s.applyText
+                  }
                 >
-                  TO
-                </Text>
-                <Text
-                  style={s.dateValue}
-                >
-                  {fmt(draftTo)}
+                  Apply
                 </Text>
               </Pressable>
             </View>
-
-            {picker ? (
-              <View style={s.picker}>
-                <DateTimePicker
-                  value={
-                    picker === 'from'
-                      ? draftFrom
-                      : draftTo
-                  }
-                  mode="date"
-                  display={
-                    Platform.OS ===
-                    'ios'
-                      ? 'inline'
-                      : 'calendar'
-                  }
-                  maximumDate={
-                    new Date()
-                  }
-                  onChange={(
-                    _,
-                    value,
-                  ) => {
-                    if (value) {
-                      if (
-                        picker ===
-                        'from'
-                      ) {
-                        setDraftFrom(
-                          value,
-                        );
-                      } else {
-                        setDraftTo(
-                          value,
-                        );
-                      }
-                    }
-
-                    if (
-                      Platform.OS !==
-                      'ios'
-                    ) {
-                      setPicker(null);
-                    }
-                  }}
-                />
-
-                {Platform.OS ===
-                'ios' ? (
-                  <Pressable
-                    onPress={() =>
-                      setPicker(null)
-                    }
-                    style={s.done}
-                  >
-                    <Text
-                      style={
-                        s.doneText
-                      }
-                    >
-                      Done
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
-
-            <Pressable
-              onPress={apply}
-              style={s.apply}
-            >
-              <Text
-                style={s.applyText}
-              >
-                Apply date range
-              </Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </>
   );
 }
 
+export default OverviewDateFilter;
+
 const s = StyleSheet.create({
   row: {
-    marginTop: 18,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  tabsScroll: {
-    flex: 1,
-  },
-  tabs: {
-    flexGrow: 1,
-    backgroundColor: '#EAF1EE',
-    padding: 4,
-    borderRadius: 14,
-    gap: 4,
-  },
-  tab: {
-    minWidth: 68,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
+    gap: 7,
     paddingVertical: 10,
-    borderRadius: 11,
   },
-  tabActive: {
+  chip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor:
+      colors.border,
     backgroundColor:
       colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  text: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  textActive: {
-    color: colors.primary,
-  },
-  filter: {
-    width: 48,
-    borderRadius: 14,
+  icon: {
+    width: 38,
+    height: 34,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor:
+      colors.border,
     backgroundColor:
       colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  filterActive: {
+  active: {
     backgroundColor:
       colors.primary,
     borderColor:
       colors.primary,
   },
-  backdrop: {
-    flex: 1,
-    backgroundColor:
-      'rgba(15,23,42,.35)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor:
-      colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  handle: {
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#DCE6E2',
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  sheetHead: {
-    flexDirection: 'row',
-    justifyContent:
-      'space-between',
-    gap: 12,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 22,
+  text: {
+    color: colors.muted,
+    fontSize: 9,
     fontWeight: '900',
   },
-  caption: {
+  activeText: {
+    color: '#FFFFFF',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor:
+      'rgba(0,0,0,0.28)',
+    justifyContent: 'center',
+    padding: 22,
+  },
+  modal: {
+    borderRadius: 22,
+    backgroundColor:
+      colors.surface,
+    padding: 18,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  modalCaption: {
     color: colors.muted,
     fontSize: 10,
     marginTop: 4,
+    marginBottom: 10,
   },
-  close: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor:
-      colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
+  label: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 10,
   },
-  months: {
+  actions: {
     flexDirection: 'row',
+    justifyContent:
+      'flex-end',
     gap: 8,
     marginTop: 18,
   },
-  month: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+  cancel: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  monthText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  dateGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  dateBox: {
-    flex: 1,
-    borderRadius: 16,
-    backgroundColor:
-      colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 13,
-  },
-  dateLabel: {
+  cancelText: {
     color: colors.muted,
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  dateValue: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '900',
-    marginTop: 5,
-  },
-  picker: {
-    marginTop: 12,
-    backgroundColor:
-      colors.background,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  done: {
-    alignSelf: 'flex-end',
-    padding: 12,
-  },
-  doneText: {
-    color: colors.primary,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   apply: {
-    minHeight: 52,
-    borderRadius: 16,
+    borderRadius: 12,
     backgroundColor:
       colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
+    paddingHorizontal: 17,
+    paddingVertical: 10,
   },
   applyText: {
     color: '#FFFFFF',
-    fontSize: 13,
     fontWeight: '900',
   },
 });

@@ -21,57 +21,35 @@ import {
 } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TicketCard } from '@/components/tickets/TicketCard';
-import { AppCard } from '@/components/AppCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import {
   getZendeskDbSnapshot,
+  peekZendeskDbSnapshot,
   syncZendeskDb,
   type ZendeskDbSnapshot,
 } from '@/lib/zendesk-db';
 import {
-  applyTicketUiFilters,
-  drilldownTickets,
-  type TicketResultMode,
-} from '@/lib/ticket-results';
-import type {
-  AtomosFieldRole,
-} from '@/lib/zendesk-dimensions';
-
-const STATUS = [
-  'all',
-  'new',
-  'open',
-  'pending',
-  'hold',
-  'solved',
-];
-
-const PRIORITY = [
-  'all',
-  'urgent',
-  'high',
-  'normal',
-  'low',
-];
-
-const ASSIGNMENT = [
-  'all',
-  'assigned',
-  'unassigned',
-];
+  DEFAULT_SUPPORT_PERIOD,
+  filterTicketsBySupportPeriod,
+  type SupportPeriod,
+} from '@/lib/support-period';
+import { SupportPeriodFilter } from '@/components/SupportPeriodFilter';
+import {
+  dimensionValue,
+  isTruthyDimension,
+  type SupportDimension,
+} from '@/lib/support-dimensions';
+import type { ZendeskTicket } from '@/lib/api';
 
 export default function TicketResults() {
-  const params =
-    useLocalSearchParams<{
-      mode?: string;
-      role?: string;
-      value?: string;
-      formId?: string;
-      ids?: string;
-      title?: string;
-    }>();
+  const params = useLocalSearchParams<{
+    role?: string;
+    value?: string;
+    formId?: string;
+    title?: string;
+    preset?: string;
+  }>();
 
   const {
     session,
@@ -80,89 +58,66 @@ export default function TicketResults() {
 
   const [snapshot, setSnapshot] =
     useState<ZendeskDbSnapshot | null>(
-      null,
+      () => peekZendeskDbSnapshot(),
     );
-
+  const [period, setPeriod] =
+    useState<SupportPeriod>(
+      DEFAULT_SUPPORT_PERIOD,
+    );
+  const [query, setQuery] =
+    useState('');
+  const [status, setStatus] =
+    useState('all');
   const [loading, setLoading] =
-    useState(true);
+    useState(!peekZendeskDbSnapshot());
   const [refreshing, setRefreshing] =
     useState(false);
   const [error, setError] =
     useState('');
 
-  const [query, setQuery] =
-    useState('');
-  const [status, setStatus] =
-    useState('all');
-  const [priority, setPriority] =
-    useState('all');
-  const [assignment, setAssignment] =
-    useState('all');
-  const [sort, setSort] =
-    useState('newest');
+  const token = useCallback(async () => {
+    const fresh = await ensureFreshSession();
+    return (
+      fresh?.accessToken ||
+      session?.accessToken ||
+      ''
+    );
+  }, [
+    ensureFreshSession,
+    session?.accessToken,
+  ]);
 
-  const token =
-    useCallback(async () => {
-      const fresh =
-        await ensureFreshSession();
+  const load = useCallback(async () => {
+    try {
+      const accessToken = await token();
+      if (!accessToken) return;
 
-      return (
-        fresh?.accessToken ||
-        session?.accessToken ||
-        ''
+      const data =
+        await getZendeskDbSnapshot(accessToken);
+      setSnapshot(data);
+    } catch (e: any) {
+      setError(
+        e?.message ||
+          'Unable to load tickets.',
       );
-    }, [
-      ensureFreshSession,
-      session?.accessToken,
-    ]);
-
-  const load =
-    useCallback(async () => {
-      setError('');
-
-      try {
-        const accessToken =
-          await token();
-
-        if (!accessToken) {
-          return;
-        }
-
-        const data =
-          await getZendeskDbSnapshot(
-            accessToken,
-          );
-
-        setSnapshot(data);
-      } catch (e: any) {
-        setError(
-          e?.message ||
-            'Unable to load tickets.',
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, [token]);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!snapshot) void load();
+  }, [load, snapshot]);
 
   async function refresh() {
     setRefreshing(true);
-
     try {
-      const accessToken =
-        await token();
+      const accessToken = await token();
+      if (!accessToken) return;
 
-      if (accessToken) {
-        const data =
-          await syncZendeskDb(
-            accessToken,
-          );
-
-        setSnapshot(data);
-      }
+      const data =
+        await syncZendeskDb(accessToken);
+      setSnapshot(data);
     } catch (e: any) {
       setError(
         e?.message ||
@@ -173,105 +128,161 @@ export default function TicketResults() {
     }
   }
 
-  const base = useMemo(() => {
+  const rows = useMemo(() => {
     if (!snapshot) return [];
 
-    const ids = String(
-      params.ids || '',
-    )
-      .split(',')
-      .map(Number)
-      .filter(Number.isFinite);
-
-    return drilldownTickets({
-      tickets:
+    let tickets =
+      filterTicketsBySupportPeriod(
         snapshot.tickets || [],
-      fields:
-        snapshot.fields || [],
-      forms:
-        snapshot.forms || [],
-      mode:
-        (params.mode ||
-          'all') as TicketResultMode,
-      role:
-        params.role as
-          | AtomosFieldRole
-          | undefined,
-      value:
-        params.value,
-      formId:
-        params.formId
-          ? Number(
-              params.formId,
+        period,
+      );
+
+    if (params.formId) {
+      const formId = Number(params.formId);
+      tickets = tickets.filter(
+        (ticket) =>
+          Number(ticket.ticket_form_id) ===
+          formId,
+      );
+    }
+
+    if (
+      params.role &&
+      params.value
+    ) {
+      const role =
+        params.role as SupportDimension;
+      const wanted =
+        String(params.value)
+          .trim()
+          .toLowerCase();
+
+      tickets = tickets.filter(
+        (ticket) =>
+          dimensionValue(
+            ticket,
+            snapshot.fields || [],
+            role,
+          )
+            .split(',')
+            .map((item: string) =>
+              item.trim().toLowerCase(),
             )
-          : undefined,
-      ids,
-    });
+            .includes(wanted),
+      );
+    }
+
+    if (params.preset === 'open') {
+      tickets = tickets.filter(
+        (ticket) =>
+          String(ticket.status).toLowerCase() ===
+          'open',
+      );
+    }
+
+    if (params.preset === 'faulty') {
+      tickets = tickets.filter(
+        (ticket) =>
+          isTruthyDimension(
+            dimensionValue(
+              ticket,
+              snapshot.fields || [],
+              'faultCategory',
+            ),
+          ),
+      );
+    }
+
+    if (params.preset === 'rma') {
+      tickets = tickets.filter(
+        (ticket) =>
+          isTruthyDimension(
+            dimensionValue(
+              ticket,
+              snapshot.fields || [],
+              'rma',
+            ),
+          ),
+      );
+    }
+
+    if (params.preset === 'unassigned') {
+      tickets = tickets.filter(
+        (ticket) => !ticket.assignee_id,
+      );
+    }
+
+    if (status !== 'all') {
+      tickets = tickets.filter(
+        (ticket) =>
+          String(ticket.status || '')
+            .toLowerCase() === status,
+      );
+    }
+
+    const needle =
+      query.trim().toLowerCase();
+
+    if (needle) {
+      tickets = tickets.filter(
+        (ticket) =>
+          [
+            ticket.id,
+            ticket.subject || '',
+            ticket.description || '',
+            ...(ticket.tags || []),
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(needle),
+      );
+    }
+
+    return [...tickets].sort(
+      (a, b) =>
+        new Date(
+          b.updated_at ||
+            b.created_at ||
+            0,
+        ).getTime() -
+        new Date(
+          a.updated_at ||
+            a.created_at ||
+            0,
+        ).getTime(),
+    );
   }, [
     params.formId,
-    params.ids,
-    params.mode,
+    params.preset,
     params.role,
     params.value,
+    period,
+    query,
     snapshot,
+    status,
   ]);
-
-  const rows = useMemo(
-    () =>
-      applyTicketUiFilters(
-        base,
-        {
-          query,
-          status,
-          priority,
-          assignment,
-          sort,
-        },
-      ),
-    [
-      assignment,
-      base,
-      priority,
-      query,
-      sort,
-      status,
-    ],
-  );
 
   return (
     <SafeAreaView
       style={s.safe}
-      edges={[
-        'top',
-        'left',
-        'right',
-      ]}
+      edges={['top', 'left', 'right']}
     >
       <ScrollView
         style={s.screen}
-        contentContainerStyle={
-          s.content
-        }
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={s.content}
         refreshControl={
           <RefreshControl
-            refreshing={
-              refreshing
-            }
+            refreshing={refreshing}
             onRefresh={refresh}
-            tintColor={
-              colors.primary
-            }
+            tintColor={colors.primary}
           />
         }
       >
         <View style={s.header}>
           <Pressable
-            onPress={() =>
-              router.back()
-            }
-            hitSlop={10}
+            onPress={() => router.back()}
             style={s.back}
+            hitSlop={10}
           >
             <Ionicons
               name="chevron-back"
@@ -280,283 +291,232 @@ export default function TicketResults() {
             />
           </Pressable>
 
-          <View
-            style={s.headerCopy}
-          >
-            <Text
-              style={s.eyebrow}
-            >
+          <View style={s.headerCopy}>
+            <Text style={s.eyebrow}>
               TICKET RESULTS
             </Text>
-            <Text
-              style={s.title}
-              numberOfLines={2}
-            >
-              {params.title ||
-                'Filtered tickets'}
+            <Text style={s.title}>
+              {params.title || 'Tickets'}
             </Text>
-            <Text
-              style={s.caption}
-            >
-              Last 90 days ·{' '}
-              {rows.length} shown
+            <Text style={s.caption}>
+              {rows.length} matching tickets
             </Text>
           </View>
         </View>
 
+        <SupportPeriodFilter
+          value={period}
+          onChange={setPeriod}
+        />
+
         <View style={s.search}>
           <Ionicons
             name="search-outline"
-            size={19}
+            size={18}
             color={colors.muted}
           />
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search ticket, subject or tag"
-            placeholderTextColor={
-              colors.muted
-            }
+            placeholder="Search tickets"
+            placeholderTextColor={colors.muted}
             style={s.searchInput}
           />
-          {query ? (
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.statusRow}
+        >
+          {[
+            'all',
+            'new',
+            'open',
+            'pending',
+            'hold',
+            'solved',
+          ].map((item: string) => (
             <Pressable
-              onPress={() =>
-                setQuery('')
-              }
+              key={item}
+              onPress={() => setStatus(item)}
+              style={[
+                s.statusChip,
+                status === item &&
+                  s.statusActive,
+              ]}
             >
-              <Ionicons
-                name="close-circle"
-                size={19}
-                color={
-                  colors.muted
-                }
-              />
+              <Text
+                style={[
+                  s.statusText,
+                  status === item &&
+                    s.statusTextActive,
+                ]}
+              >
+                {item === 'all'
+                  ? 'All'
+                  : item
+                      .charAt(0)
+                      .toUpperCase() +
+                    item.slice(1)}
+              </Text>
             </Pressable>
-          ) : null}
-        </View>
-
-        <FilterStrip
-          title="Status"
-          values={STATUS}
-          value={status}
-          onChange={setStatus}
-        />
-
-        <FilterStrip
-          title="Priority"
-          values={PRIORITY}
-          value={priority}
-          onChange={setPriority}
-        />
-
-        <FilterStrip
-          title="Assignment"
-          values={ASSIGNMENT}
-          value={assignment}
-          onChange={
-            setAssignment
-          }
-        />
-
-        <View style={s.sortRow}>
-          <Text
-            style={s.filterLabel}
-          >
-            SORT
-          </Text>
-
-          <View style={s.sortActions}>
-            {[
-              ['newest', 'Newest'],
-              ['oldest', 'Oldest'],
-            ].map(
-              ([key, label]) => (
-                <Pressable
-                  key={key}
-                  onPress={() =>
-                    setSort(key)
-                  }
-                  style={[
-                    s.sortChip,
-                    sort === key &&
-                      s.chipActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      s.chipText,
-                      sort === key &&
-                        s.chipTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ),
-            )}
-          </View>
-        </View>
-
-        {snapshot ? (
-          <View style={s.syncRow}>
-            <Ionicons
-              name="cloud-done-outline"
-              size={15}
-              color={colors.primary}
-            />
-            <Text style={s.syncText}>
-              DB snapshot ·{' '}
-              {snapshot.syncedAt
-                ? new Date(
-                    snapshot.syncedAt,
-                  ).toLocaleString()
-                : 'not synced yet'}
-            </Text>
-          </View>
-        ) : null}
+          ))}
+        </ScrollView>
 
         {loading ? (
           <View style={s.loading}>
             <ActivityIndicator
-              color={
-                colors.primary
-              }
+              color={colors.primary}
             />
-            <Text
-              style={s.loadingText}
-            >
-              Initializing support
-              data…
+            <Text style={s.loadingText}>
+              Initializing support data…
             </Text>
           </View>
         ) : null}
 
         {error ? (
-          <AppCard>
-            <Text
-              style={s.errorTitle}
-            >
-              Tickets unavailable
+          <View style={s.errorCard}>
+            <Text style={s.errorTitle}>
+              Data unavailable
             </Text>
-            <Text
-              style={s.errorText}
-            >
+            <Text style={s.errorText}>
               {error}
             </Text>
-          </AppCard>
+          </View>
         ) : null}
 
-        {!loading &&
+        {snapshot &&
           rows.map((ticket) => (
-            <TicketCard
+            <ResolvedTicketRow
               key={ticket.id}
               ticket={ticket}
-              agents={
-                snapshot?.agents ||
-                []
-              }
-              groups={
-                snapshot?.groups ||
-                []
-              }
-              forms={
-                snapshot?.forms ||
-                []
-              }
-              onPress={() =>
-                router.push({
-                  pathname:
-                    '/ticket/[id]',
-                  params: {
-                    id: String(
-                      ticket.id,
-                    ),
-                  },
-                })
-              }
+              snapshot={snapshot}
             />
           ))}
-
-        {!loading &&
-        !error &&
-        !rows.length ? (
-          <AppCard>
-            <Text
-              style={s.emptyTitle}
-            >
-              No tickets match
-            </Text>
-            <Text
-              style={s.emptyText}
-            >
-              Change the filters or
-              pull down to sync.
-            </Text>
-          </AppCard>
-        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function FilterStrip({
-  title,
-  values,
-  value,
-  onChange,
+function ResolvedTicketRow({
+  ticket,
+  snapshot,
 }: {
-  title: string;
-  values: string[];
-  value: string;
-  onChange: (
-    value: string,
-  ) => void;
+  ticket: ZendeskTicket;
+  snapshot: ZendeskDbSnapshot;
 }) {
+  const assignee =
+    snapshot.agents.find(
+      (item: any) =>
+        Number(item.id) ===
+        Number(ticket.assignee_id),
+    ) as any;
+
+  const group =
+    snapshot.groups.find(
+      (item: any) =>
+        Number(item.id) ===
+        Number(ticket.group_id),
+    ) as any;
+
+  const form =
+    snapshot.forms.find(
+      (item: any) =>
+        Number(item.id) ===
+        Number(ticket.ticket_form_id),
+    ) as any;
+
   return (
-    <View style={s.filterBlock}>
-      <Text style={s.filterLabel}>
-        {title.toUpperCase()}
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: '/ticket/[id]',
+          params: {
+            id: String(ticket.id),
+          },
+        })
+      }
+      style={s.ticket}
+    >
+      <View style={s.ticketTop}>
+        <Text style={s.ticketId}>
+          #{ticket.id}
+        </Text>
+        <Text style={s.ticketStatus}>
+          {String(ticket.status || 'unknown')}
+        </Text>
+      </View>
+
+      <Text
+        style={s.subject}
+        numberOfLines={2}
+      >
+        {ticket.subject || 'Untitled ticket'}
       </Text>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={
-          false
-        }
-        contentContainerStyle={
-          s.chips
-        }
+      <View style={s.metaGrid}>
+        <Meta
+          label="Assignee"
+          value={
+            assignee?.name ||
+            assignee?.email ||
+            'Unassigned'
+          }
+        />
+        <Meta
+          label="Group"
+          value={
+            group?.name ||
+            'No group'
+          }
+        />
+        <Meta
+          label="Form"
+          value={
+            form?.display_name ||
+            form?.name ||
+            'Default'
+          }
+        />
+      </View>
+
+      <View style={s.ticketBottom}>
+        <Text style={s.updated}>
+          {ticket.updated_at
+            ? new Date(
+                ticket.updated_at,
+              ).toLocaleString()
+            : ''}
+        </Text>
+        <Ionicons
+          name="chevron-forward"
+          size={17}
+          color={colors.cyan}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
+function Meta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={s.meta}>
+      <Text style={s.metaLabel}>
+        {label}
+      </Text>
+      <Text
+        style={s.metaValue}
+        numberOfLines={1}
       >
-        {values.map((item) => (
-          <Pressable
-            key={item}
-            onPress={() =>
-              onChange(item)
-            }
-            style={[
-              s.chip,
-              value === item &&
-                s.chipActive,
-            ]}
-          >
-            <Text
-              style={[
-                s.chipText,
-                value === item &&
-                  s.chipTextActive,
-              ]}
-            >
-              {item === 'all'
-                ? 'All'
-                : item
-                    .charAt(0)
-                    .toUpperCase() +
-                  item.slice(1)}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -564,164 +524,179 @@ function FilterStrip({
 const s = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor:
-      colors.background,
+    backgroundColor: colors.background,
   },
   screen: {
     flex: 1,
   },
   content: {
-    padding: 18,
-    paddingTop: 10,
+    paddingHorizontal: 18,
+    paddingTop: 4,
     paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 14,
+    gap: 11,
+    marginBottom: 2,
   },
   back: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
-    backgroundColor:
-      colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   headerCopy: {
     flex: 1,
+    paddingTop: 1,
   },
   eyebrow: {
     color: colors.primary,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
     letterSpacing: 1,
   },
   title: {
     color: colors.text,
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: '900',
-    marginTop: 3,
+    marginTop: 2,
   },
   caption: {
     color: colors.muted,
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 9,
+    marginTop: 2,
   },
   search: {
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor:
-      colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 13,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: 8,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    marginTop: 3,
   },
   searchInput: {
     flex: 1,
     color: colors.text,
     fontSize: 11,
   },
-  filterBlock: {
-    marginTop: 13,
-  },
-  filterLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-    marginBottom: 7,
-  },
-  chips: {
+  statusRow: {
     gap: 7,
+    paddingVertical: 11,
   },
-  chip: {
+  statusChip: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor:
-      colors.surface,
+    backgroundColor: colors.surface,
     paddingHorizontal: 11,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
-  chipActive: {
-    backgroundColor:
-      colors.primary,
-    borderColor:
-      colors.primary,
+  statusActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  chipText: {
+  statusText: {
     color: colors.muted,
     fontSize: 9,
     fontWeight: '800',
   },
-  chipTextActive: {
+  statusTextActive: {
     color: '#FFFFFF',
-  },
-  sortRow: {
-    marginTop: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent:
-      'space-between',
-  },
-  sortActions: {
-    flexDirection: 'row',
-    gap: 7,
-  },
-  sortChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor:
-      colors.surface,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-  },
-  syncRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 14,
-    marginBottom: 7,
-  },
-  syncText: {
-    color: colors.muted,
-    fontSize: 9,
   },
   loading: {
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 50,
   },
   loadingText: {
     color: colors.text,
     fontWeight: '900',
-    fontSize: 12,
-    marginTop: 10,
+    marginTop: 9,
+    fontSize: 11,
+  },
+  errorCard: {
+    padding: 14,
+    borderRadius: 15,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   errorTitle: {
-    color: colors.danger,
+    color: colors.text,
     fontWeight: '900',
   },
   errorText: {
-    color: colors.text,
-    fontSize: 10,
-    marginTop: 4,
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontWeight: '900',
-  },
-  emptyText: {
     color: colors.muted,
     fontSize: 10,
     marginTop: 4,
+  },
+  ticket: {
+    borderRadius: 17,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 13,
+    marginBottom: 9,
+  },
+  ticketTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  ticketId: {
+    color: colors.primary,
+    fontWeight: '900',
+    fontSize: 10,
+  },
+  ticketStatus: {
+    color: colors.muted,
+    fontWeight: '800',
+    fontSize: 9,
+    textTransform: 'capitalize',
+  },
+  subject: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 7,
+  },
+  metaGrid: {
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 10,
+  },
+  meta: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+    padding: 8,
+  },
+  metaLabel: {
+    color: colors.muted,
+    fontSize: 7,
+    fontWeight: '800',
+  },
+  metaValue: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  ticketBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  updated: {
+    color: colors.muted,
+    fontSize: 8,
   },
 });

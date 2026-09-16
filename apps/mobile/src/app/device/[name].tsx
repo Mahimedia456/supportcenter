@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -19,192 +20,170 @@ import {
 } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AppCard } from '@/components/AppCard';
-import { TicketCard } from '@/components/tickets/TicketCard';
-import { ViewDeviceTicketsButton } from '@/components/devices/ViewDeviceTicketsButton';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import * as api from '@/lib/api';
 import {
-  buildDeviceHealth,
-  deviceTickets,
-  regionsForDevice,
-  topIssuesForDevice,
-  type DeviceBreakdownRow,
-} from '@/lib/device-health';
+  getZendeskDbSnapshot,
+  peekZendeskDbSnapshot,
+  syncZendeskDb,
+  type ZendeskDbSnapshot,
+} from '@/lib/zendesk-db';
+import {
+  DEFAULT_SUPPORT_PERIOD,
+  filterTicketsBySupportPeriod,
+  type SupportPeriod,
+} from '@/lib/support-period';
+import { SupportPeriodFilter } from '@/components/SupportPeriodFilter';
+import {
+  dimensionValue,
+  isTruthyDimension,
+} from '@/lib/support-dimensions';
 
 export default function DeviceDetail() {
-  const params =
+  const { name = '' } =
     useLocalSearchParams<{ name: string }>();
 
-  const name = Array.isArray(params.name)
-    ? params.name[0]
-    : params.name || 'Unknown device';
+  const device =
+    decodeURIComponent(String(name));
 
   const {
     session,
     ensureFreshSession,
   } = useAuth();
 
-  const [tickets, setTickets] =
-    useState<api.ZendeskTicket[]>([]);
-  const [forms, setForms] =
-    useState<api.ZendeskForm[]>([]);
-  const [fields, setFields] =
-    useState<api.ZendeskTicketField[]>([]);
-  const [agents, setAgents] =
-    useState<api.ZendeskUser[]>([]);
-  const [groups, setGroups] =
-    useState<api.ZendeskGroup[]>([]);
+  const cached = peekZendeskDbSnapshot();
 
+  const [snapshot, setSnapshot] =
+    useState<ZendeskDbSnapshot | null>(cached);
+  const [period, setPeriod] =
+    useState<SupportPeriod>(DEFAULT_SUPPORT_PERIOD);
+  const [loading, setLoading] =
+    useState(!cached);
   const [refreshing, setRefreshing] =
     useState(false);
-  const [loading, setLoading] =
-    useState(true);
-  const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setError('');
-
-    const fresh =
-      await ensureFreshSession();
-    const token =
-      fresh?.accessToken ||
-      session?.accessToken;
-
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const [
-        ticketResult,
-        formResult,
-        fieldResult,
-        agentResult,
-        groupResult,
-      ] = await Promise.all([
-        api.zendeskAllTickets(token),
-        api.zendeskForms(token),
-        api.zendeskFields(token),
-        api.zendeskAgents(token),
-        api.zendeskGroups(token),
-      ]);
-
-      setTickets(
-        ticketResult.tickets || [],
-      );
-      setForms(
-        formResult.ticket_forms || [],
-      );
-      setFields(
-        fieldResult.ticket_fields || [],
-      );
-      setAgents(
-        agentResult.users || [],
-      );
-      setGroups(
-        groupResult.groups || [],
-      );
-    } catch (e: any) {
-      setError(
-        e?.message ||
-          'Unable to load device detail.',
-      );
-    } finally {
-      setLoading(false);
-    }
+  const token = useCallback(async () => {
+    const fresh = await ensureFreshSession();
+    return fresh?.accessToken || session?.accessToken || '';
   }, [
     ensureFreshSession,
     session?.accessToken,
   ]);
 
+  const load = useCallback(async () => {
+    try {
+      const accessToken = await token();
+      if (!accessToken) return;
+
+      setSnapshot(
+        await getZendeskDbSnapshot(accessToken),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
-    void load();
-  }, []);
+    if (!cached) void load();
+  }, [cached, load]);
 
   async function refresh() {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    try {
+      const accessToken = await token();
+      if (!accessToken) return;
+
+      setSnapshot(
+        await syncZendeskDb(accessToken),
+      );
+    } finally {
+      setRefreshing(false);
+    }
   }
 
-  const row = useMemo(
-    () =>
-      buildDeviceHealth(
-        tickets,
-        fields,
-        forms,
-      ).find(
-        (item) =>
-          item.device.toLowerCase() ===
-          name.toLowerCase(),
-      ),
-    [fields, forms, name, tickets],
-  );
+  const deviceTickets = useMemo(() => {
+    if (!snapshot) return [];
 
-  const related = useMemo<
-    api.ZendeskTicket[]
-  >(
-    () =>
-      deviceTickets(
-        tickets,
-        fields,
-        forms,
-        name,
-      ),
-    [fields, forms, name, tickets],
-  );
+    const periodTickets =
+      filterTicketsBySupportPeriod(
+        snapshot.tickets || [],
+        period,
+      );
 
-  const issues = useMemo<
-    DeviceBreakdownRow[]
-  >(
-    () =>
-      topIssuesForDevice(
-        tickets,
-        fields,
-        forms,
-        name,
-      ),
-    [fields, forms, name, tickets],
-  );
+    const wanted =
+      device.trim().toLowerCase();
 
-  const regions = useMemo<
-    DeviceBreakdownRow[]
-  >(
-    () =>
-      regionsForDevice(
-        tickets,
-        fields,
-        forms,
-        name,
-      ),
-    [fields, forms, name, tickets],
-  );
+    return periodTickets.filter(
+      (ticket) =>
+        dimensionValue(
+          ticket,
+          snapshot.fields || [],
+          'device',
+        )
+          .split(',')
+          .map((item: string) =>
+            item.trim().toLowerCase(),
+          )
+          .includes(wanted),
+    );
+  }, [
+    device,
+    period,
+    snapshot,
+  ]);
 
-  function openTicket(id: number) {
+  const openCount =
+    deviceTickets.filter(
+      (ticket) =>
+        String(ticket.status || '').toLowerCase() ===
+        'open',
+    ).length;
+
+  const faultyCount =
+    deviceTickets.filter(
+      (ticket) =>
+        isTruthyDimension(
+          dimensionValue(
+            ticket,
+            snapshot?.fields || [],
+            'faultCategory',
+          ),
+        ),
+    ).length;
+
+  const rmaCount =
+    deviceTickets.filter(
+      (ticket) =>
+        isTruthyDimension(
+          dimensionValue(
+            ticket,
+            snapshot?.fields || [],
+            'rma',
+          ),
+        ),
+    ).length;
+
+  const unassignedCount =
+    deviceTickets.filter(
+      (ticket) => !ticket.assignee_id,
+    ).length;
+
+  function openTickets(
+    title: string,
+    preset?: string,
+  ) {
     router.push({
-      pathname: '/ticket/[id]',
-      params: { id: String(id) },
+      pathname: '/ticket-results',
+      params: {
+        role: 'device',
+        value: device,
+        title,
+        ...(preset
+          ? { preset }
+          : {}),
+      },
     });
   }
-
-  const maxIssue = Math.max(
-    1,
-    ...issues.map(
-      (item: DeviceBreakdownRow) =>
-        item.count,
-    ),
-  );
-
-  const maxRegion = Math.max(
-    1,
-    ...regions.map(
-      (item: DeviceBreakdownRow) =>
-        item.count,
-    ),
-  );
 
   return (
     <SafeAreaView
@@ -225,11 +204,7 @@ export default function DeviceDetail() {
         <View style={s.header}>
           <Pressable
             onPress={() => router.back()}
-            style={({ pressed }) => [
-              s.back,
-              pressed && s.backPressed,
-            ]}
-            hitSlop={10}
+            style={s.back}
           >
             <Ionicons
               name="chevron-back"
@@ -238,18 +213,26 @@ export default function DeviceDetail() {
             />
           </Pressable>
 
-          <View style={s.headerText}>
+          <View style={s.headerCopy}>
             <Text style={s.eyebrow}>
-              DEVICE HEALTH
+              DEVICE
             </Text>
             <Text
               style={s.title}
               numberOfLines={2}
             >
-              {name}
+              {device}
+            </Text>
+            <Text style={s.caption}>
+              Device-specific support activity
             </Text>
           </View>
         </View>
+
+        <SupportPeriodFilter
+          value={period}
+          onChange={setPeriod}
+        />
 
         {loading ? (
           <View style={s.loading}>
@@ -257,327 +240,112 @@ export default function DeviceDetail() {
               color={colors.primary}
             />
             <Text style={s.loadingText}>
-              Loading device health…
+              Initializing support data…
             </Text>
           </View>
-        ) : null}
-
-        {error ? (
-          <AppCard>
-            <Text style={s.errorTitle}>
-              Device data unavailable
-            </Text>
-            <Text style={s.errorText}>
-              {error}
-            </Text>
-          </AppCard>
-        ) : null}
-
-        {!loading &&
-        !error &&
-        row ? (
+        ) : (
           <>
-            <View style={s.kpiGrid}>
-              <Kpi
-                label="Tickets"
-                value={row.total}
-              />
-              <Kpi
+            <View style={s.grid}>
+              <Metric
                 label="Open"
-                value={row.open}
+                value={openCount}
+                icon="folder-open-outline"
+                onPress={() =>
+                  openTickets(
+                    `${device} · Open`,
+                    'open',
+                  )
+                }
               />
-              <Kpi
+              <Metric
                 label="Faulty"
-                value={row.faulty}
-                accent
+                value={faultyCount}
+                icon="warning-outline"
+                onPress={() =>
+                  openTickets(
+                    `${device} · Faulty`,
+                    'faulty',
+                  )
+                }
               />
-              <Kpi
+              <Metric
                 label="RMA"
-                value={row.rma}
+                value={rmaCount}
+                icon="repeat-outline"
+                onPress={() =>
+                  openTickets(
+                    `${device} · RMA`,
+                    'rma',
+                  )
+                }
+              />
+              <Metric
+                label="Unassigned"
+                value={unassignedCount}
+                icon="person-remove-outline"
+                onPress={() =>
+                  openTickets(
+                    `${device} · Unassigned`,
+                    'unassigned',
+                  )
+                }
               />
             </View>
 
-            <AppCard
-              style={s.trendCard}
+            <Pressable
+              onPress={() =>
+                openTickets(
+                  `${device} · All tickets`,
+                )
+              }
+              style={s.allButton}
             >
-              <View>
-                <Text
-                  style={s.trendLabel}
-                >
-                  LAST 7 DAYS
-                </Text>
-                <Text
-                  style={s.trendValue}
-                >
-                  {row.last7Days}
-                </Text>
-              </View>
-
-              <View
-                style={s.trendDivider}
-              />
-
-              <View>
-                <Text
-                  style={s.trendLabel}
-                >
-                  PREVIOUS 7 DAYS
-                </Text>
-                <Text
-                  style={s.trendValue}
-                >
-                  {row.previous7Days}
-                </Text>
-              </View>
-
-              <View
-                style={s.trendBadge}
-              >
-                <Text
-                  style={
-                    s.trendBadgeText
-                  }
-                >
-                  {row.trendPct ===
-                  null
-                    ? '—'
-                    : `${row.trendPct > 0 ? '+' : ''}${row.trendPct}%`}
-                </Text>
-              </View>
-            </AppCard>
-
-            <SectionTitle
-              title="Top faults / issues"
-              caption="Derived from Fault Category, Category and Support Type"
-            />
-
-            <AppCard>
-              {issues
-                .slice(0, 10)
-                .map(
-                  (
-                    item: DeviceBreakdownRow,
-                    index: number,
-                  ) => (
-                    <BarRow
-                      key={item.label}
-                      label={item.label}
-                      value={item.count}
-                      max={maxIssue}
-                      last={
-                        index ===
-                        Math.min(
-                          issues.length,
-                          10,
-                        ) -
-                          1
-                      }
-                    />
-                  ),
-                )}
-
-              {!issues.length ? (
-                <Text
-                  style={s.emptyText}
-                >
-                  No fault/category data
-                  for this device.
-                </Text>
-              ) : null}
-            </AppCard>
-
-            <SectionTitle
-              title="Regions"
-              caption="Where this product is generating support load"
-            />
-
-            <AppCard>
-              {regions
-                .slice(0, 10)
-                .map(
-                  (
-                    item: DeviceBreakdownRow,
-                    index: number,
-                  ) => (
-                    <BarRow
-                      key={item.label}
-                      label={item.label}
-                      value={item.count}
-                      max={maxRegion}
-                      cyan
-                      last={
-                        index ===
-                        Math.min(
-                          regions.length,
-                          10,
-                        ) -
-                          1
-                      }
-                    />
-                  ),
-                )}
-            </AppCard>
-
-            <View
-              style={s.relatedHeader}
-            >
-              <View>
-                <Text
-                  style={
-                    s.relatedEyebrow
-                  }
-                >
-                  READ-ONLY TICKETS
-                </Text>
-                <Text
-                  style={
-                    s.relatedTitle
-                  }
-                >
-                  Related tickets
-                </Text>
-              </View>
-
-              <Text
-                style={s.relatedCount}
-              >
-                {related.length}
+              <Text style={s.allButtonText}>
+                View all {deviceTickets.length} tickets
               </Text>
-            </View>
-
-            {related
-              .slice(0, 40)
-              .map(
-                (
-                  ticket: api.ZendeskTicket,
-                ) => (
-                  <TicketCard
-                    key={ticket.id}
-                    ticket={ticket}
-                    agents={agents}
-                    groups={groups}
-                    forms={forms}
-                    onPress={() =>
-                      openTicket(
-                        ticket.id,
-                      )
-                    }
-                  />
-                ),
-              )}
+              <Ionicons
+                name="arrow-forward"
+                size={18}
+                color="#FFFFFF"
+              />
+            </Pressable>
           </>
-        ) : null}
-
-        {!loading &&
-        !error &&
-        !row ? (
-          <AppCard>
-            <Text style={s.emptyTitle}>
-              Device not found
-            </Text>
-            <Text style={s.emptyText}>
-              No ticket/custom-field data
-              matched {name}.
-            </Text>
-          </AppCard>
-        ) : null}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Kpi({
+function Metric({
   label,
   value,
-  accent = false,
+  icon,
+  onPress,
 }: {
   label: string;
   value: number;
-  accent?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
 }) {
   return (
-    <View style={s.kpi}>
-      <Text
-        style={[
-          s.kpiValue,
-          accent &&
-            s.kpiValueAccent,
-        ]}
-      >
-        {value}
-      </Text>
-      <Text style={s.kpiLabel}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function SectionTitle({
-  title,
-  caption,
-}: {
-  title: string;
-  caption: string;
-}) {
-  return (
-    <View style={s.sectionHeader}>
-      <Text style={s.sectionTitle}>
-        {title}
-      </Text>
-      <Text
-        style={s.sectionCaption}
-      >
-        {caption}
-      </Text>
-    </View>
-  );
-}
-
-function BarRow({
-  label,
-  value,
-  max,
-  last,
-  cyan = false,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  last: boolean;
-  cyan?: boolean;
-}) {
-  return (
-    <View
-      style={[
-        s.barRow,
-        last && s.lastRow,
-      ]}
+    <Pressable
+      onPress={onPress}
+      style={s.metric}
     >
-      <View style={s.barTop}>
-        <Text style={s.barLabel}>
-          {label}
-        </Text>
-        <Text style={s.barValue}>
-          {value}
-        </Text>
-      </View>
-
-      <View style={s.barTrack}>
-        <View
-          style={[
-            s.barFill,
-            cyan && s.barFillCyan,
-            {
-              width: `${Math.max(
-                6,
-                (value / max) * 100,
-              )}%`,
-            },
-          ]}
+      <View style={s.metricIcon}>
+        <Ionicons
+          name={icon}
+          size={19}
+          color={colors.primary}
         />
       </View>
-    </View>
+      <Text style={s.metricValue}>
+        {value}
+      </Text>
+      <Text style={s.metricLabel}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -588,210 +356,105 @@ const s = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
-    paddingTop: 10,
+    paddingHorizontal: 18,
+    paddingTop: 4,
     paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 18,
+    gap: 11,
+    alignItems: 'flex-start',
   },
   back: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
-    backgroundColor: colors.surface,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backPressed: {
-    backgroundColor: colors.primarySoft,
-  },
-  headerText: {
+  headerCopy: {
     flex: 1,
   },
   eyebrow: {
     color: colors.primary,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 1,
   },
   title: {
     color: colors.text,
-    fontSize: 27,
+    fontSize: 23,
     fontWeight: '900',
+    marginTop: 2,
+  },
+  caption: {
+    color: colors.muted,
+    fontSize: 9,
     marginTop: 3,
   },
   loading: {
     alignItems: 'center',
-    paddingVertical: 65,
+    paddingVertical: 55,
   },
   loadingText: {
-    marginTop: 10,
-    color: colors.muted,
-  },
-  errorTitle: {
-    color: colors.danger,
-    fontWeight: '900',
-  },
-  errorText: {
     color: colors.text,
-    fontSize: 12,
-    marginTop: 5,
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 9,
   },
-  kpiGrid: {
+  grid: {
     flexDirection: 'row',
-    gap: 7,
+    flexWrap: 'wrap',
+    gap: 9,
+    marginTop: 8,
   },
-  kpi: {
-    flex: 1,
+  metric: {
+    width: '48%',
+    minHeight: 125,
+    borderRadius: 18,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 15,
-    padding: 12,
+    padding: 14,
   },
-  kpiValue: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  kpiValueAccent: {
-    color: colors.primary,
-  },
-  kpiLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
-    marginTop: 4,
-    textTransform: 'uppercase',
-  },
-  trendCard: {
-    marginTop: 12,
-    flexDirection: 'row',
+  metricIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#E7F5EF',
     alignItems: 'center',
-    gap: 13,
-    backgroundColor: '#F4FAF7',
+    justifyContent: 'center',
   },
-  trendLabel: {
+  metricValue: {
+    color: colors.text,
+    fontSize: 25,
+    fontWeight: '900',
+    marginTop: 12,
+  },
+  metricLabel: {
     color: colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  trendValue: {
-    color: colors.text,
-    fontSize: 21,
-    fontWeight: '900',
-    marginTop: 4,
-  },
-  trendDivider: {
-    width: 1,
-    height: 42,
-    backgroundColor: colors.border,
-  },
-  trendBadge: {
-    marginLeft: 'auto',
-    backgroundColor: colors.cyanSoft,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-  trendBadgeText: {
-    color: colors.cyan,
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  sectionHeader: {
-    marginTop: 22,
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  sectionCaption: {
-    color: colors.muted,
-    fontSize: 10,
-    marginTop: 3,
-  },
-  barRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  lastRow: {
-    borderBottomWidth: 0,
-  },
-  barTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  barLabel: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  barValue: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  barTrack: {
-    marginTop: 8,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: '#EAF1EE',
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: colors.primary,
-  },
-  barFillCyan: {
-    backgroundColor: colors.cyan,
-  },
-  relatedHeader: {
-    marginTop: 24,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  relatedEyebrow: {
-    color: colors.cyan,
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1,
-  },
-  relatedTitle: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '900',
     marginTop: 3,
   },
-  relatedCount: {
-    color: colors.primary,
-    fontSize: 20,
-    fontWeight: '900',
+  allButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 13,
   },
-  emptyTitle: {
-    color: colors.text,
+  allButtonText: {
+    color: '#FFFFFF',
     fontWeight: '900',
-  },
-  emptyText: {
-    color: colors.muted,
-    fontSize: 10,
-    lineHeight: 15,
-    paddingVertical: 10,
+    fontSize: 11,
   },
 });
