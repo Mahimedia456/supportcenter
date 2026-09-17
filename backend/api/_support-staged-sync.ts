@@ -93,7 +93,35 @@ export async function runStage(client:Client,workspace:WorkspaceSlug,stage:SyncS
   return {workspace,stage,done:true,counts:{forms:forms.length,fields:fields.length,groups:groups.length,agents:agents.length}};
  }
  if(stage==='satisfaction'){
-  const rows=cutoff90(await allPages(workspace,'/api/v2/satisfaction_ratings.json?per_page=100','satisfaction_ratings',10));
+  const startMs=Date.now()-90*24*60*60*1000;
+  const rows:any[]=[];
+  let next:string|null='/api/v2/satisfaction_ratings.json?sort_by=created_at&sort_order=desc&per_page=100';
+
+  for(let page=0;page<20&&next;page++){
+   const body=await zd(workspace,next);
+   const current=Array.isArray(body?.satisfaction_ratings)?body.satisfaction_ratings:[];
+   let reachedCutoff=false;
+
+   for(const rating of current){
+    const created=new Date(rating?.created_at||rating?.updated_at||0).getTime();
+
+    if(Number.isFinite(created)&&created<startMs){
+     reachedCutoff=true;
+     continue;
+    }
+
+    rows.push(rating);
+   }
+
+   if(reachedCutoff||!body?.next_page){
+    next=null;
+    break;
+   }
+
+   const url=new URL(String(body.next_page));
+   next=`${url.pathname}${url.search}`;
+  }
+
   await updateCols(client,workspace,{satisfaction:rows},'syncing');
   return {workspace,stage,done:true,count:rows.length};
  }
