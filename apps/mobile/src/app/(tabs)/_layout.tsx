@@ -46,11 +46,6 @@ const icons: Record<
     active: 'happy',
     inactive: 'happy-outline',
   },
-  alerts: {
-    active: 'notifications',
-    inactive:
-      'notifications-outline',
-  },
 };
 
 export default function TabsLayout() {
@@ -173,15 +168,6 @@ export default function TabsLayout() {
         options={{
           title:
             'Satisfaction',
-        }}
-      />
-
-      <Tabs.Screen
-        name="alerts"
-        options={{
-          href: null,
-          title:
-            'Alerts',
         }}
       />
     </Tabs>

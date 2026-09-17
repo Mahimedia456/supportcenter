@@ -17,6 +17,7 @@ export function buildManagerAlerts(
  forms:ZendeskForm[],
  metrics:ZendeskTicketMetric[]=[],
  metricEvents:ZendeskMetricEvent[]=[],
+ options?:{includeDeviceSpikes?:boolean},
 ):ManagerAlert[]{
  const alerts:ManagerAlert[]=[];
  const byMetric=new Map(metrics.map(m=>[m.ticket_id,m]));
@@ -58,10 +59,12 @@ export function buildManagerAlerts(
  const bad=ratings.filter(r=>ticketMap.has(Number(r.ticket_id))&&String(r.score||'').toLowerCase()==='bad');
  if(bad.length)alerts.push({id:'bad-csat',kind:'bad_csat',severity:'critical',title:'Bad customer feedback',message:`${bad.length} bad satisfaction rating${bad.length===1?'':'s'} are attached to tickets in the selected period.`,count:bad.length,ticketIds:uniq(bad.map(r=>Number(r.ticket_id)))});
 
- const devices=buildDeviceHealth(tickets,fields,forms).filter(r=>r.last7Days>=3&&(r.trendPct||0)>=50).slice(0,5);
- for(const row of devices){
-   const ids=tickets.filter(t=>[t.subject||'',t.description||'',...(t.tags||[])].join(' ').toLowerCase().includes(row.device.toLowerCase())).map(t=>t.id);
-   alerts.push({id:`device-spike:${encodeURIComponent(row.device)}`,kind:'device_spike',severity:'info',title:'Product support spike',message:`${row.device} has ${row.last7Days} cases in the last 7 days (${row.trendPct}% vs previous 7 days).`,count:row.last7Days,ticketIds:ids,entityLabel:row.device});
+ if(options?.includeDeviceSpikes){
+  const devices=buildDeviceHealth(tickets,fields,forms).filter(r=>r.last7Days>=3&&(r.trendPct||0)>=50).slice(0,5);
+  for(const row of devices){
+    const ids=tickets.filter(t=>[t.subject||'',t.description||'',...(t.tags||[])].join(' ').toLowerCase().includes(row.device.toLowerCase())).map(t=>t.id);
+    alerts.push({id:`device-spike:${encodeURIComponent(row.device)}`,kind:'device_spike',severity:'info',title:'Product support spike',message:`${row.device} has ${row.last7Days} cases in the last 7 days (${row.trendPct}% vs previous 7 days).`,count:row.last7Days,ticketIds:ids,entityLabel:row.device});
+  }
  }
  const order={critical:0,warning:1,info:2};
  return alerts.sort((a,b)=>order[a.severity]-order[b.severity]);
