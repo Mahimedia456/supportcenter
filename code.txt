@@ -1,0 +1,21 @@
+cd E:\Supportcenter\apps\mobile
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+
+.\BUILD-ANDROID-APK-FAST.ps1
+
+
+
+debug BUILD
+cd E:\Supportcenter\apps\mobile
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+
+.\BUILD-ANDROID-APK-DEBUG-FAST.ps1
+
+
+adb install -r "E:\Supportcenter\apps\mobile\builds\SupportCommandCenter-20260917-1953-debug.apk"
+
+
+
+.\BUILD-EAS-PREVIEW-APK.ps1

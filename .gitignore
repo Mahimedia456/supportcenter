@@ -37,3 +37,7 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Mobile generated builds
+apps/mobile/builds/
+*.apk

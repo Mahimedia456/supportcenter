@@ -1,17 +1,22 @@
-# Phase 24.1 Installer Fix
+# Phase 24.4 Installer V2
 
-PowerShell treats variable names case-insensitively, so `$Home` conflicts with the built-in read-only `$HOME`.
+Use this if Phase 24.4 files were already extracted and merged directly into:
 
-This installer replaces:
-- `$Home` → `$HomeScreen`
-- `$HomeText` → `$HomeScreenText`
-
-No application or backend logic is changed.
+`E:\Supportcenter`
 
 Run:
 
 ```powershell
 cd E:\Supportcenter
+
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\INSTALL-PHASE-24-1.ps1
+
+.\INSTALL-PHASE-24-4-V2.ps1 -ProjectRoot "E:\Supportcenter"
 ```
+
+The installer detects that the patch source and project root are the same folder, skips file copying, and continues with:
+- database migration
+- backend TypeScript
+- backend build
+- mobile TypeScript
+- Phase 24.4 verification

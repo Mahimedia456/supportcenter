@@ -8,10 +8,6 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "icon": "./assets/brand/app-icon.png",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#F7FCFA"
-    },
     "android": {
       "package": "com.mahimediasolutions.supportcommandcenter",
       "versionCode": 4,
@@ -34,13 +30,22 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F7FCFA"
+          "backgroundColor": "#F7FCFA",
+          "image": "./assets/brand/native-splash-transparent.png",
+          "imageWidth": 1,
+          "resizeMode": "contain"
         }
       ],
       "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "31a4ebf1-7bd1-4bf1-8a7f-5b8414f1186d"
+      }
     }
   }
 }

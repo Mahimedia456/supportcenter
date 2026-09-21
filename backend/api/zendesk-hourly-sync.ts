@@ -22,7 +22,7 @@ export default async function handler(req:any,res:any){
  }
 
  if(!['atomos','angelbird'].includes(workspace))return res.status(400).json({ok:false,error:'workspace required'});
- if(!['reference','satisfaction','metrics','tickets','metric-events'].includes(stage))return res.status(400).json({ok:false,error:'stage required'});
+ if(!['reference','satisfaction','metrics','tickets','metric-events','conversations'].includes(stage))return res.status(400).json({ok:false,error:'stage required'});
  let client:Client|null=null;
  try{client=await db();const result=await runStage(client,workspace,stage,cursor);return res.status(200).json({ok:true,...result,timestamp:new Date().toISOString()})}
  catch(error:any){return res.status(500).json({ok:false,error:error?.message||'Staged sync failed'})}

@@ -1,438 +1,77 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
-  router,
-  useLocalSearchParams,
-} from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { AppCard } from '@/components/AppCard';
-import { TicketCard } from '@/components/tickets/TicketCard';
-import { colors } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import * as api from '@/lib/api';
-import {
-  buildManagerAlerts,
-  ticketsForAlert,
-} from '@/lib/alerts';
+import React,{useMemo} from 'react';
+import {FlatList,Pressable,StyleSheet,Text,View} from 'react-native';
+import {router,useLocalSearchParams} from 'expo-router';
+import {Ionicons} from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import {AppCard} from '@/components/AppCard';
+import {TicketCard} from '@/components/tickets/TicketCard';
+import {colors} from '@/constants/theme';
+import {useGlobalSupportSnapshot} from '@/hooks/useGlobalSupportSnapshot';
+import {buildManagerAlerts,ticketsForAlert} from '@/lib/alerts';
 
-export default function AlertDetail() {
-  const params =
-    useLocalSearchParams<{
-      id: string;
-    }>();
+export default function AlertDetail(){
+ const params=useLocalSearchParams<{id:string}>();
+ const alertId=Array.isArray(params.id)?params.id[0]:params.id||'';
+ const {snapshot}=useGlobalSupportSnapshot();
 
-  const alertId =
-    Array.isArray(params.id)
-      ? params.id[0]
-      : params.id || '';
+ const tickets=snapshot?.tickets||[];
+ const ratings=snapshot?.satisfaction||[];
+ const fields=snapshot?.fields||[];
+ const forms=snapshot?.forms||[];
+ const metrics=snapshot?.metrics||[];
+ const events=snapshot?.metricEvents||[];
+ const agents=snapshot?.agents||[];
+ const groups=snapshot?.groups||[];
 
-  const {
-    session,
-    ensureFreshSession,
-  } = useAuth();
+ const alert=useMemo(
+  ()=>buildManagerAlerts(tickets,ratings,fields,forms,metrics,events,{includeDeviceSpikes:false}).find(item=>item.id===alertId),
+  [alertId,tickets,ratings,fields,forms,metrics,events],
+ );
 
-  const [tickets, setTickets] =
-    useState<api.ZendeskTicket[]>([]);
-  const [ratings, setRatings] =
-    useState<
-      api.ZendeskSatisfactionRating[]
-    >([]);
-  const [forms, setForms] =
-    useState<api.ZendeskForm[]>([]);
-  const [fields, setFields] =
-    useState<
-      api.ZendeskTicketField[]
-    >([]);
-  const [metrics, setMetrics] =
-    useState<
-      api.ZendeskTicketMetric[]
-    >([]);
-  const [events, setEvents] =
-    useState<
-      api.ZendeskMetricEvent[]
-    >([]);
-  const [agents, setAgents] =
-    useState<api.ZendeskUser[]>([]);
-  const [groups, setGroups] =
-    useState<api.ZendeskGroup[]>([]);
+ const related=useMemo(()=>alert?ticketsForAlert(alert,tickets):[],[alert,tickets]);
 
-  const [loading, setLoading] =
-    useState(true);
-  const [refreshing, setRefreshing] =
-    useState(false);
-  const [error, setError] = useState('');
+ const header=<>
+  <View style={s.header}>
+   <Pressable onPress={()=>router.back()} style={({pressed})=>[s.back,pressed&&{opacity:.75}]}>
+    <Ionicons name="chevron-back" size={23} color={colors.text}/>
+   </Pressable>
+   <View style={s.headerCopy}>
+    <Text style={s.eyebrow}>ALERT DETAILS</Text>
+    <Text style={s.headerTitle} numberOfLines={2}>{alert?.title||'Manager alert'}</Text>
+   </View>
+  </View>
 
-  const load = useCallback(async () => {
-    setError('');
+  {alert?<AppCard style={s.hero}>
+   <View style={s.heroTop}>
+    <Text style={[s.severity,{color:alert.severity==='critical'?colors.danger:alert.severity==='warning'?colors.warning:colors.cyan}]}>{alert.severity.toUpperCase()}</Text>
+    <Text style={s.count}>{related.length} ticket{related.length===1?'':'s'}</Text>
+   </View>
+   <Text style={s.message}>{alert.message}</Text>
+  </AppCard>:<AppCard style={s.notice}><Text style={s.noticeTitle}>Alert unavailable</Text><Text style={s.noticeText}>This alert is not present in the saved snapshot.</Text></AppCard>}
 
-    const fresh =
-      await ensureFreshSession();
-    const token =
-      fresh?.accessToken ||
-      session?.accessToken;
+  <View style={s.relatedRow}>
+   <Text style={s.relatedTitle}>Related tickets</Text>
+   <Text style={s.relatedCount}>{related.length}</Text>
+  </View>
+ </>;
 
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const ticketResult =
-        await api.zendeskAnalyticsTickets(
-          token,
-          90,
-        );
-
-      setTickets(
-        ticketResult.tickets || [],
-      );
-
-      const results =
-        await Promise.allSettled([
-          api.zendeskSatisfaction(
-            token,
-            90,
-          ),
-          api.zendeskForms(token),
-          api.zendeskFields(token),
-          api.zendeskTicketMetrics(
-            token,
-            90,
-          ),
-          api.zendeskMetricEvents(
-            token,
-            30,
-          ),
-          api.zendeskAgents(token),
-          api.zendeskGroups(token),
-        ]);
-
-      const [
-        satisfaction,
-        formResult,
-        fieldResult,
-        metricResult,
-        eventResult,
-        agentResult,
-        groupResult,
-      ] = results;
-
-      if (
-        satisfaction.status ===
-        'fulfilled'
-      ) {
-        setRatings(
-          satisfaction.value
-            .ratings || [],
-        );
-      }
-
-      if (
-        formResult.status ===
-        'fulfilled'
-      ) {
-        setForms(
-          formResult.value
-            .ticket_forms || [],
-        );
-      }
-
-      if (
-        fieldResult.status ===
-        'fulfilled'
-      ) {
-        setFields(
-          fieldResult.value
-            .ticket_fields || [],
-        );
-      }
-
-      if (
-        metricResult.status ===
-        'fulfilled'
-      ) {
-        setMetrics(
-          metricResult.value
-            .metrics || [],
-        );
-      }
-
-      if (
-        eventResult.status ===
-        'fulfilled'
-      ) {
-        setEvents(
-          eventResult.value.events ||
-            [],
-        );
-      }
-
-      if (
-        agentResult.status ===
-        'fulfilled'
-      ) {
-        setAgents(
-          agentResult.value.users ||
-            [],
-        );
-      }
-
-      if (
-        groupResult.status ===
-        'fulfilled'
-      ) {
-        setGroups(
-          groupResult.value.groups ||
-            [],
-        );
-      }
-    } catch (e: any) {
-      setError(
-        e?.message ||
-          'Unable to load alert detail.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    ensureFreshSession,
-    session?.accessToken,
-  ]);
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }
-
-  const alert = useMemo(
-    () =>
-      buildManagerAlerts(
-        tickets,
-        ratings,
-        fields,
-        forms,
-        metrics,
-        events,
-      ).find(
-        (item) =>
-          item.id === alertId,
-      ),
-    [
-      alertId,
-      events,
-      fields,
-      forms,
-      metrics,
-      ratings,
-      tickets,
-    ],
-  );
-
-  const related = useMemo(
-    () =>
-      alert
-        ? ticketsForAlert(
-            alert,
-            tickets,
-          )
-        : [],
-    [alert, tickets],
-  );
-
-  return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={refresh}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      <View style={s.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={s.back}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={22}
-            color={colors.text}
-          />
-        </Pressable>
-
-        <View style={s.headerText}>
-          <Text style={s.eyebrow}>
-            ALERT DETAIL
-          </Text>
-          <Text style={s.title}>
-            {alert?.title ||
-              'Manager alert'}
-          </Text>
-        </View>
-      </View>
-
-      {loading ? (
-        <View style={s.loading}>
-          <ActivityIndicator
-            color={colors.primary}
-          />
-        </View>
-      ) : null}
-
-      {error ? (
-        <AppCard>
-          <Text style={s.error}>
-            {error}
-          </Text>
-        </AppCard>
-      ) : null}
-
-      {!loading &&
-      !error &&
-      alert ? (
-        <>
-          <AppCard style={s.hero}>
-            <Text style={s.severity}>
-              {alert.severity.toUpperCase()}
-            </Text>
-            <Text style={s.message}>
-              {alert.message}
-            </Text>
-          </AppCard>
-
-          <View style={s.relatedRow}>
-            <Text style={s.relatedTitle}>
-              Related tickets
-            </Text>
-            <Text style={s.relatedCount}>
-              {related.length}
-            </Text>
-          </View>
-
-          {related.map((ticket) => (
-            <TicketCard
-              key={ticket.id}
-              ticket={ticket}
-              agents={agents}
-              groups={groups}
-              forms={forms}
-              onPress={() =>
-                router.push({
-                  pathname:
-                    '/ticket/[id]',
-                  params: {
-                    id: String(
-                      ticket.id,
-                    ),
-                  },
-                })
-              }
-            />
-          ))}
-        </>
-      ) : null}
-    </ScrollView>
-  );
+ return <SafeAreaView style={s.safe} edges={['top','left','right']}>
+  <FlatList
+   style={s.screen}
+   contentContainerStyle={s.content}
+   data={related}
+   keyExtractor={item=>String(item.id)}
+   initialNumToRender={8}
+   maxToRenderPerBatch={8}
+   windowSize={5}
+   removeClippedSubviews
+   ListHeaderComponent={header}
+   ListEmptyComponent={alert?<View style={s.empty}><Ionicons name="file-tray-outline" size={36} color={colors.primary}/><Text style={s.emptyTitle}>No related tickets in snapshot</Text></View>:null}
+   renderItem={({item})=><TicketCard ticket={item} agents={agents} groups={groups} forms={forms} onPress={()=>router.push({pathname:'/ticket/[id]',params:{id:String(item.id)}})}/>}
+  />
+ </SafeAreaView>
 }
 
-const s = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 18,
-    paddingTop: 22,
-    paddingBottom: 100,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 18,
-  },
-  back: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    flex: 1,
-  },
-  eyebrow: {
-    color: colors.primary,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 23,
-    fontWeight: '900',
-    marginTop: 3,
-  },
-  loading: {
-    paddingVertical: 60,
-  },
-  error: {
-    color: colors.danger,
-    fontWeight: '700',
-  },
-  hero: {
-    backgroundColor: '#F7FAF8',
-  },
-  severity: {
-    color: colors.warning,
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  message: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '700',
-    marginTop: 10,
-  },
-  relatedRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 22,
-    marginBottom: 10,
-  },
-  relatedTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  relatedCount: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: '900',
-  },
+const s=StyleSheet.create({
+ safe:{flex:1,backgroundColor:colors.background},screen:{flex:1,backgroundColor:colors.background},content:{paddingHorizontal:18,paddingTop:8,paddingBottom:80},header:{minHeight:54,flexDirection:'row',alignItems:'flex-start',gap:11,marginBottom:12},back:{width:42,height:42,borderRadius:14,borderWidth:1,borderColor:colors.border,backgroundColor:colors.surface,alignItems:'center',justifyContent:'center'},headerCopy:{flex:1,paddingTop:1},eyebrow:{color:colors.primary,fontSize:8,fontWeight:'900',letterSpacing:1},headerTitle:{color:colors.text,fontSize:22,lineHeight:27,fontWeight:'900',marginTop:2},hero:{backgroundColor:colors.surface,marginBottom:4},heroTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8},severity:{fontSize:9,fontWeight:'900'},count:{color:colors.primary,backgroundColor:colors.primarySoft,borderRadius:999,paddingHorizontal:9,paddingVertical:5,fontSize:9,fontWeight:'900'},message:{color:colors.text,fontSize:13,lineHeight:19,fontWeight:'700',marginTop:10},notice:{marginBottom:8},noticeTitle:{color:colors.danger,fontWeight:'900'},noticeText:{color:colors.muted,fontSize:10,marginTop:4},relatedRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:18,marginBottom:10},relatedTitle:{color:colors.text,fontSize:17,fontWeight:'900'},relatedCount:{color:colors.primary,fontSize:16,fontWeight:'900'},empty:{alignItems:'center',paddingVertical:45},emptyTitle:{color:colors.muted,fontWeight:'800',marginTop:10}
 });

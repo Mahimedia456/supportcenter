@@ -68,4 +68,24 @@ jobs:
                 sleep 2
               done
             done
+
+            # Conversation snapshots are stored per ticket in a separate table.
+            # The backend only fetches tickets whose conversation cache is
+            # missing or older than the ticket's updated_at timestamp.
+            for i in $(seq 1 100); do
+              echo "$workspace / conversations chunk $i"
+
+              call_stage "$workspace" conversations | tee /tmp/result.json
+
+              done_flag=$(jq -r '.done // false' /tmp/result.json)
+              remaining=$(jq -r '.remaining // 0' /tmp/result.json)
+
+              echo "Conversation snapshots remaining: $remaining"
+
+              if [ "$done_flag" = "true" ]; then
+                break
+              fi
+
+              sleep 2
+            done
           done

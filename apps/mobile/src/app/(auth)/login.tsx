@@ -77,8 +77,9 @@ export default function LoginScreen() {
     launchIntroPlayed = true;
 
     const animation = Animated.sequence([
-      // Real visible splash hold.
-      Animated.delay(3000),
+      // Start the existing logo animation immediately after the native launch frame.
+      // No second/fake splash hold.
+      Animated.delay(80),
 
       // Logo travels from center to its permanent top position.
       Animated.parallel([
@@ -98,7 +99,7 @@ export default function LoginScreen() {
         ]),
       ]),
 
-      // Login becomes available at about the 4 second mark.
+      // Login form follows the logo animation immediately.
       Animated.parallel([
         Animated.timing(formOpacity, {
           toValue: 1,

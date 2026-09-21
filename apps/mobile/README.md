@@ -1,39 +1,52 @@
-# Support Command Center — Phase 01
+# Expo Standalone Startup Fix
 
-Phase 01 is the Expo SDK 57 mobile foundation with the brand assets already placed.
+Changes are intentionally limited to startup/build behavior.
 
-## Included
-- Expo SDK 57 + TypeScript + Expo Router foundation
-- Generic Support Command Center icon, splash and login artwork
-- Light professional green/cyan/lime theme tokens
-- Login screen with **no AngelBird/Atomos logo**
-- SecureStore session persistence
-- Phase-01 mock workspace resolver:
-  - `aamir@mahimediasolutions.com` → AngelBird
-  - `shahid@mahimediasolutions.com` → Atomos
-- Overview / Tickets / Insights / Devices / Alerts tab shell
-- Zendesk-style read-only ticket mock UI
-- Forms overview mock UI
-- Pull-to-refresh wired on Overview
-- Workspace logo folders ready for official assets
+## Changed
+- Removed legacy Expo `splash` config.
+- Native Expo splash uses a transparent 2x2 asset on the same login background color.
+- Existing animated login logo remains.
+- Removed the 3-second artificial login-logo hold. Animation starts immediately.
+- EAS `preview` builds a standalone Android APK.
+- Added `BUILD-EAS-PREVIEW-APK.ps1`.
 
-## Important: official logos
-Replace the placeholders with:
-- `assets/brand/workspaces/angelbird/angelbird-logo.png` (or SVG later with SVG support)
-- `assets/brand/workspaces/atomos/atomos-logo.png`
+## Not changed
+- Login form
+- Authentication logic
+- Backend/API URL
+- Tabs
+- Overview
+- Tickets
+- Alerts
+- Satisfaction
+- Insights
+- Devices
+- Profile
+- Existing internal UI/behavior
 
-Phase 01 currently renders a safe text workspace mark because the official logos were not provided in this chat. The UI is already workspace-aware, so Phase 02 can switch this component to the official file returned for the resolved workspace.
+## Install
 
-## Install / run (PowerShell)
 ```powershell
-cd E:\SupportCommandCenter\apps\mobile
-npm install
-npx expo install --fix
-npx expo install expo-secure-store
-npm start
+cd <extracted-patch-folder>
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+
+.\INSTALL-EXPO-STANDALONE-STARTUP-FIX.ps1 -ProjectRoot "E:\Supportcenter\apps\mobile"
 ```
 
-Expo SDK 57 requires Node 22.13.x or newer.
+## EAS standalone APK
 
-## Phase boundaries
-Phase 01 intentionally has no Zendesk credentials and no production backend calls. Never put Zendesk tokens in Expo `.env`. Phase 02 adds NestJS/Supabase auth, real workspace resolution, and server-side Zendesk connections.
+```powershell
+cd E:\Supportcenter\apps\mobile
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+
+.\BUILD-EAS-PREVIEW-APK.ps1
+```
+
+The first EAS build may ask you to log in and/or link/create the EAS project.
+
+The `preview` APK does not need Expo Go, Metro, or `expo start`.
+
+## Important Android behavior
+Android always owns the very first native launch frame. This patch makes that frame visually blank on the same background instead of showing a second logo. The first visible branded element is the existing animated Support Command Center logo on the login screen.
