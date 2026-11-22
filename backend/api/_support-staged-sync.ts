@@ -58,26 +58,18 @@ async function allPages(slug:WorkspaceSlug,path:string,key:string,maxPages=10){
  return rows;
 }
 
-async function existing(client:Client,workspace:WorkspaceSlug){
+// Read only the collection needed by the current stage. Previously every
+// chunk loaded the entire (potentially huge) metric-event JSON into Node.
+async function existing(client:Client,workspace:WorkspaceSlug,stage:SyncStage){
+ const col=stage==='metric-events'?'metric_events':'tickets';
  const q=await client.query(
-  `select tickets,forms,fields,groups,agents,satisfaction,metrics,metric_events
-   from public.zendesk_cache_snapshots
-   where workspace_slug=$1
-   limit 1`,
+  `select ${col} from public.zendesk_cache_snapshots where workspace_slug=$1 limit 1`,
   [workspace],
  );
-
- const row=q.rows?.[0]||{};
-
+ const rows=q.rows?.[0]?.[col];
  return {
-  tickets:Array.isArray(row.tickets)?row.tickets:[],
-  forms:Array.isArray(row.forms)?row.forms:[],
-  fields:Array.isArray(row.fields)?row.fields:[],
-  groups:Array.isArray(row.groups)?row.groups:[],
-  agents:Array.isArray(row.agents)?row.agents:[],
-  satisfaction:Array.isArray(row.satisfaction)?row.satisfaction:[],
-  metrics:Array.isArray(row.metrics)?row.metrics:[],
-  metricEvents:Array.isArray(row.metric_events)?row.metric_events:[],
+  tickets:col==='tickets'&&Array.isArray(rows)?rows:[],
+  metricEvents:col==='metric_events'&&Array.isArray(rows)?rows:[],
  };
 }
 
@@ -131,7 +123,7 @@ async function updateCols(
    set ${sets.join(',')}${sets.length?',':''}
        sync_status=$${n+1},
        last_error=$${n+2},
-       synced_at=now(),
+       synced_at=case when $${n+1}='ok' then now() else synced_at end,
        updated_at=now()
    where workspace_slug=$1`,
   [...vals,status,err],
@@ -147,7 +139,7 @@ function cutoff90(rows:any[],field='created_at'){
  });
 }
 
-async function chunk(slug:WorkspaceSlug,path:string,key:string,maxPages=4){
+async function chunk(slug:WorkspaceSlug,path:string,key:string,maxPages=2){
  const rows:any[]=[];
  let next:string|null=path;
 
@@ -177,9 +169,11 @@ async function syncConversationBatch(
  workspace:WorkspaceSlug,
  tickets:any[],
 ){
+ // Keep scheduled refresh bounded. Other tickets load comments on demand.
  const usable=tickets
   .filter(ticket=>Number.isFinite(Number(ticket?.id)))
-  .sort((a,b)=>timeOf(b?.updated_at||b?.created_at)-timeOf(a?.updated_at||a?.created_at));
+  .sort((a,b)=>timeOf(b?.updated_at||b?.created_at)-timeOf(a?.updated_at||a?.created_at))
+  .slice(0,80);
 
  if(!usable.length){
   return {done:true,count:0,remaining:0};
@@ -267,7 +261,7 @@ export async function runStage(
  cursor?:string|null,
 ){
  if(!workspaceConfigured(workspace)){
-  return {workspace,stage,skipped:true,done:true};
+  throw new Error(`${workspace} Zendesk configuration is incomplete; sync NOT performed`);
  }
 
  if(stage==='reference'){
@@ -333,7 +327,7 @@ export async function runStage(
    workspace,
    '/api/v2/ticket_metrics.json?per_page=100',
    'ticket_metrics',
-   10,
+   40,
   );
 
   await updateCols(client,workspace,{metrics:rows},'syncing');
@@ -341,7 +335,7 @@ export async function runStage(
   return {workspace,stage,done:true,count:rows.length};
  }
 
- const state=await existing(client,workspace);
+ const state=await existing(client,workspace,stage);
 
  if(stage==='conversations'){
   const tickets=cutoff90(state.tickets);
@@ -364,7 +358,7 @@ export async function runStage(
    client,
    workspace,
    {tickets:merged},
-   c.next?'syncing':'ok',
+   'syncing',
   );
 
   return {
@@ -395,4 +389,18 @@ export async function runStage(
   count:merged.length,
   next:c.next,
  };
+}
+
+// Only used by the scheduled sync endpoint. Keep failures visible in the database.
+export async function markStageFailure(
+ client:Client,workspace:WorkspaceSlug,stage:SyncStage,error:unknown,
+){
+ await ensureRow(client,workspace);
+ const detail=error instanceof Error?error.message:String(error);
+ await client.query(
+  `update public.zendesk_cache_snapshots
+   set sync_status='error',last_error=$2,updated_at=now()
+   where workspace_slug=$1`,
+  [workspace,`${stage}: ${detail}`.slice(0,500)],
+ );
 }
