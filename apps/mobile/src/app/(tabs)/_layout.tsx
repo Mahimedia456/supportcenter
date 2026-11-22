@@ -33,9 +33,9 @@ const icons: Record<
     active: 'ticket',
     inactive: 'ticket-outline',
   },
-  insights: {
-    active: 'analytics',
-    inactive: 'analytics-outline',
+  rma: {
+    active: 'repeat',
+    inactive: 'repeat-outline',
   },
   devices: {
     active: 'hardware-chip',
@@ -148,18 +148,10 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
-        name="insights"
+        name="rma"
         options={{
           title:
-            'Insights',
-        }}
-      />
-
-      <Tabs.Screen
-        name="devices"
-        options={{
-          title:
-            'Devices',
+            'RMA',
         }}
       />
 
@@ -168,6 +160,14 @@ export default function TabsLayout() {
         options={{
           title:
             'Satisfaction',
+        }}
+      />
+
+      <Tabs.Screen
+        name="devices"
+        options={{
+          title:
+            'Devices',
         }}
       />
     </Tabs>

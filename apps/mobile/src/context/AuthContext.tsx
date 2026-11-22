@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import type { Session } from '@/types/workspace';
 import { clearSession, loadSession, saveSession } from '@/lib/session';
 import * as api from '@/lib/api';
+import {clearSupportSnapshot} from '@/lib/support-data-store';
 
 type AuthValue = {
   session: Session | null;
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(next);
     } else {
       await clearSession();
+      await clearSupportSnapshot();
       setSession(null);
     }
   }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Support Command Center",
     "slug": "support-command-center",
-    "version": "0.2.3",
+    "version": "0.4.3",
     "orientation": "portrait",
     "scheme": "supportcommandcenter",
     "userInterfaceStyle": "light",
@@ -10,18 +10,18 @@
     "icon": "./assets/brand/app-icon.png",
     "android": {
       "package": "com.mahimediasolutions.supportcommandcenter",
-      "versionCode": 4,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-icon-foreground.png",
         "backgroundImage": "./assets/brand/adaptive-icon-background.png",
-        "backgroundColor": "#075F55",
+        "backgroundColor": "#043B36",
         "monochromeImage": "./assets/brand/adaptive-icon-monochrome.png"
       },
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
       "bundleIdentifier": "com.mahimediasolutions.supportcommandcenter",
-      "buildNumber": "4",
+      "buildNumber": "9",
       "supportsTablet": true
     },
     "plugins": [
@@ -32,7 +32,7 @@
         {
           "backgroundColor": "#F7FCFA",
           "image": "./assets/brand/native-splash-transparent.png",
-          "imageWidth": 1,
+          "imageWidth": 180,
           "resizeMode": "contain"
         }
       ],

@@ -1,25 +1,17 @@
-import {Alert} from 'react-native';
+import {AppState} from 'react-native';
 import {useCallback,useEffect} from 'react';
 import {useAuth} from '@/context/AuthContext';
-import {hydrateSupportSnapshot,loadSupportSnapshot,refreshSupportSnapshot,useSupportDataStore} from '@/lib/support-data-store';
-
-let bootstrapPromise:Promise<void>|null=null;
-let bootstrapDone=false;
-
-async function bootstrapOnce(token:string){
- if(bootstrapDone)return;
- if(bootstrapPromise)return bootstrapPromise;
- bootstrapPromise=(async()=>{
-  await hydrateSupportSnapshot();
-  if(token)await loadSupportSnapshot(token,false);
-  bootstrapDone=true;
- })().catch(()=>undefined).finally(()=>{bootstrapPromise=null});
- return bootstrapPromise;
-}
+import {
+ loadSupportSnapshot,
+ refreshSupportSnapshot,
+ selectSupportSnapshotScope,
+ useSupportDataStore,
+} from '@/lib/support-data-store';
 
 export function useGlobalSupportSnapshot(){
  const {session,ensureFreshSession}=useAuth();
  const store=useSupportDataStore();
+ const scope=session?`${session.user.id}:${session.workspace.slug}`:'';
 
  const getToken=useCallback(async()=>{
   const fresh=await ensureFreshSession();
@@ -28,22 +20,26 @@ export function useGlobalSupportSnapshot(){
 
  useEffect(()=>{
   let active=true;
-  void(async()=>{
+  selectSupportSnapshotScope(scope);
+  async function load(){
+   if(!scope)return;
    const token=await getToken();
-   if(active)await bootstrapOnce(token);
-  })();
-  return()=>{active=false};
- },[getToken]);
+   if(active&&token)await loadSupportSnapshot(token,scope);
+  }
+  void load();
+  const listener=AppState.addEventListener('change',state=>{
+   if(state==='active')void load();
+  });
+  return()=>{active=false;listener.remove()};
+ },[scope,getToken]);
 
  const refresh=useCallback(async()=>{
-  Alert.alert(
-   'Sync in progress',
-   'Your syncing data is under process. You will see updated data once it is done.',
-   [{text:'Close'}],
-  );
   const token=await getToken();
-  if(token)void refreshSupportSnapshot(token);
- },[getToken]);
+  if(!token||!scope)return;
+  try{await refreshSupportSnapshot(token,scope)}catch{
+   // Error is retained in the shared store for each screen to show.
+  }
+ },[getToken,scope]);
 
  return {...store,refresh};
 }

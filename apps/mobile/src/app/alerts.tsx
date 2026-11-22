@@ -78,7 +78,7 @@ export default function AlertsScreen(){
    windowSize={5}
    ListHeaderComponent={header}
    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary}/>}
-   renderItem={({item})=><AlertCard alert={item} onPress={()=>router.push({pathname:'/alert/[id]',params:{id:item.id}} as unknown as Href)}/>}
+   renderItem={({item})=><AlertCard alert={item} onPress={()=>router.push({pathname:'/ticket-results',params:{alertId:item.id,title:item.title,period:period.preset,start:period.start,end:period.end}} as unknown as Href)}/>}
    ListEmptyComponent={!loading?<View style={s.empty}><Ionicons name="checkmark-circle-outline" size={42} color={colors.primary}/><Text style={s.emptyTitle}>No alerts in this period</Text><Text style={s.emptyText}>Saved snapshot has no matching operational alerts.</Text></View>:null}
   />
  </SafeAreaView>

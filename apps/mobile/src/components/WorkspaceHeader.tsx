@@ -11,6 +11,7 @@ import {
 } from '@expo/vector-icons';
 import {
   router,
+  type Href,
 } from 'expo-router';
 import {
   useSafeAreaInsets,
@@ -105,6 +106,30 @@ export function WorkspaceHeader({
         <View
           style={s.actions}
         >
+          <Pressable
+            onPress={() =>
+              router.push(
+                '/insights' as Href,
+              )
+            }
+            style={({
+              pressed,
+            }) => [
+              s.actionButton,
+              pressed &&
+                s.pressed,
+            ]}
+            accessibilityLabel="Insights"
+          >
+            <Ionicons
+              name="analytics-outline"
+              size={21}
+              color={
+                colors.primary
+              }
+            />
+          </Pressable>
+
           <Pressable
             onPress={() =>
               router.push(
@@ -248,11 +273,11 @@ const s =
         'row',
       alignItems:
         'center',
-      gap: 8,
+      gap: 6,
     },
     actionButton: {
-      width: 42,
-      height: 42,
+      width: 39,
+      height: 39,
       borderRadius: 14,
       backgroundColor:
         colors.surface,
@@ -265,8 +290,8 @@ const s =
         'center',
     },
     avatar: {
-      width: 46,
-      height: 46,
+      width: 42,
+      height: 42,
       borderRadius: 15,
       backgroundColor:
         colors.primarySoft,

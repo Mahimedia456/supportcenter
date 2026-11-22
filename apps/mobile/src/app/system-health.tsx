@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { HealthStatusCard } from '@/components/account/HealthStatusCard';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import {clearSupportSnapshot} from '@/lib/support-data-store';
 import {
   systemHealth,
   type SystemHealthSnapshot,
@@ -111,6 +112,7 @@ export default function SystemHealthScreen() {
           style: 'destructive',
           onPress: async () => {
             await clearSupportCache();
+            await clearSupportSnapshot();
             setCache(await cacheSummary());
           },
         },

@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Support Command Center",
+    "slug": "support-command-center",
+    "version": "0.4.2",
+    "orientation": "portrait",
+    "scheme": "supportcommandcenter",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/brand/app-icon.png",
+    "android": {
+      "package": "com.mahimediasolutions.supportcommandcenter",
+      "versionCode": 8,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/brand/adaptive-icon-background.png",
+        "backgroundColor": "#043B36",
+        "monochromeImage": "./assets/brand/adaptive-icon-monochrome.png"
+      },
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "ios": {
+      "bundleIdentifier": "com.mahimediasolutions.supportcommandcenter",
+      "buildNumber": "8",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7FCFA",
+          "image": "./assets/brand/native-splash-transparent.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "31a4ebf1-7bd1-4bf1-8a7f-5b8414f1186d"
+      }
+    }
+  }
+}

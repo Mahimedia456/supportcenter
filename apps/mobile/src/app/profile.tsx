@@ -7,8 +7,7 @@ import {WorkspaceHeader} from '@/components/WorkspaceHeader';
 import {AppCard} from '@/components/AppCard';
 import {colors} from '@/constants/theme';
 import {useAuth} from '@/context/AuthContext';
-import {syncZendeskDb} from '@/lib/zendesk-db';
-import {seedSupportSnapshot} from '@/lib/support-data-store';
+import {refreshSupportSnapshot,useSupportDataStore} from '@/lib/support-data-store';
 
 export default function ProfileScreen(){
  const {session,signOut,ensureFreshSession}=useAuth();
@@ -17,6 +16,7 @@ export default function ProfileScreen(){
  const [feedbackAlerts,setFeedbackAlerts]=useState(true);
  const [spikeAlerts,setSpikeAlerts]=useState(true);
  const [syncing,setSyncing]=useState(false);
+ const {snapshot,error:syncError}=useSupportDataStore();
 
  const workspace=useMemo(()=>{const raw:any=session?.workspace;return {name:raw?.name||raw?.displayName||(raw?.slug==='atomos'?'Atomos':raw?.slug==='angelbird'?'AngelBird':'Support Workspace'),slug:raw?.slug||'workspace'}},[session?.workspace]);
  const user:any=session?.user||{};
@@ -25,7 +25,7 @@ export default function ProfileScreen(){
 
  function startSync(){
   if(syncing){
-   Alert.alert('Sync in progress','Your syncing data is under process. You will see updated data once it is done.',[{text:'Close'}]);
+   Alert.alert('Sync in progress','Refreshing the server snapshot. No Zendesk import will run on your phone.',[{text:'Close'}]);
    return;
   }
 
@@ -33,7 +33,7 @@ export default function ProfileScreen(){
 
   Alert.alert(
    'Sync in progress',
-   'Your syncing data is under process. You will see updated data once it is done.',
+   'Refreshing the server snapshot. No Zendesk import will run on your phone.',
    [{text:'Close'}],
   );
 
@@ -42,8 +42,8 @@ export default function ProfileScreen(){
     const fresh=await ensureFreshSession();
     const token=fresh?.accessToken||session?.accessToken||'';
     if(!token)throw new Error('Manager session unavailable');
-    const snapshot=await syncZendeskDb(token);
-    seedSupportSnapshot(snapshot);
+    if(!session)throw new Error('Manager session unavailable');
+    await refreshSupportSnapshot(token,`${session.user.id}:${session.workspace.slug}`);
    }catch(error:any){
     Alert.alert('Sync could not complete',error?.message||'The saved snapshot is still available. Please try again later.',[{text:'Close'}]);
    }finally{
@@ -62,12 +62,14 @@ export default function ProfileScreen(){
    <SectionLabel title="Workspace"/>
    <AppCard style={s.infoCard}><InfoRow label="Workspace" value={workspace.name}/><InfoRow label="Workspace ID" value={workspace.slug}/><InfoRow label="Data source" value="Saved Zendesk snapshot"/><InfoRow label="Mode" value="Read only" last/></AppCard>
 
-   <SectionLabel title="Data Sync" caption="Manual sync runs in the background while the app stays usable"/>
+   <SectionLabel title="Data Sync" caption="Reads the latest completed server snapshot without starting a Zendesk import"/>
    <Pressable onPress={startSync} style={({pressed})=>[s.syncCard,pressed&&{opacity:.84}]}>
     <View style={s.syncIcon}><Ionicons name={syncing?'sync':'cloud-download-outline'} size={22} color={colors.primary}/></View>
-    <View style={s.syncText}><Text style={s.syncTitle}>{syncing?'Sync in progress':'Sync Support Data'}</Text><Text style={s.syncCaption}>{syncing?'You can close this screen and continue using the app.':'Refresh the saved Zendesk snapshot on demand.'}</Text></View>
+    <View style={s.syncText}><Text style={s.syncTitle}>{syncing?'Refreshing snapshot':'Refresh App Snapshot'}</Text><Text style={s.syncCaption}>{syncing?'Fetching latest completed server snapshot.':(snapshot?.syncedAt?`Last server sync: ${new Date(snapshot.syncedAt).toLocaleString()}`:'Waiting for initial server sync.')}</Text></View>
     <Ionicons name="chevron-forward" size={20} color={colors.cyan}/>
    </Pressable>
+
+   {syncError?<Text style={{color:colors.danger,fontSize:11,marginTop:8}}>{syncError}</Text>:null}
 
    <SectionLabel title="Notifications" caption="Manager alert preferences on this device"/>
    <AppCard style={s.infoCard}>

@@ -3,22 +3,21 @@ import React,{useMemo,useState} from 'react';
 import {Pressable,RefreshControl,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {router,type Href} from 'expo-router';
 import {Ionicons} from '@expo/vector-icons';
-import {WorkspaceHeader} from '@/components/WorkspaceHeader';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {SupportPeriodFilter} from '@/components/SupportPeriodFilter';
 import {colors} from '@/constants/theme';
 import {useGlobalSupportSnapshot} from '@/hooks/useGlobalSupportSnapshot';
 import {DEFAULT_SUPPORT_PERIOD,filterTicketsBySupportPeriod,type SupportPeriod} from '@/lib/support-period';
 import {dimensionRows,fieldForDimension,type SupportDimension} from '@/lib/support-dimensions';
+import {deriveRegion} from '@/lib/overview';
 
-type Tab='forms'|'supportType'|'device'|'region'|'category'|'faultCategory'|'rma';
+type Tab='forms'|'supportType'|'device'|'region'|'faultCategory';
 const TABS:Array<{key:Tab;label:string;icon:keyof typeof Ionicons.glyphMap}>=[
  {key:'forms',label:'Forms',icon:'document-text-outline'},
  {key:'supportType',label:'Support',icon:'help-buoy-outline'},
  {key:'device',label:'Devices',icon:'hardware-chip-outline'},
  {key:'region',label:'Regions',icon:'globe-outline'},
- {key:'category',label:'Category',icon:'grid-outline'},
- {key:'faultCategory',label:'Fault',icon:'warning-outline'},
- {key:'rma',label:'RMA',icon:'repeat-outline'},
+ {key:'faultCategory',label:'Fault Category',icon:'warning-outline'},
 ];
 
 export default function Insights(){
@@ -45,24 +44,36 @@ export default function Insights(){
     count:counts.get(Number(form.id))||0,
    })).filter((row)=>row.count>0).sort((a,b)=>b.count-a.count);
   }
+  if(tab==='region'){
+   const counts=new Map<string,number>();
+   for(const ticket of tickets){
+    const label=deriveRegion(ticket);
+    counts.set(label,(counts.get(label)||0)+1);
+   }
+   return [...counts.entries()]
+    .map(([label,count],index)=>({id:index,label,count}))
+    .sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label));
+  }
   return dimensionRows(tickets,fields,tab as SupportDimension).map((row,index)=>({id:index,...row}));
  },[fields,forms,tab,tickets]);
 
  const max=Math.max(1,...rows.map((r)=>r.count));
 
+ function periodParams(){
+  return{period:period.preset,start:period.start,end:period.end};
+ }
+
  function openRow(row:any){
   if(tab==='forms'){
-   router.push({pathname:'/ticket-results',params:{formId:String(row.id),title:row.label}} as unknown as Href);
+   router.push({pathname:'/ticket-results',params:{formId:String(row.id),title:row.label,...periodParams()}} as unknown as Href);
   }else{
-   router.push({pathname:'/ticket-results',params:{role:tab,value:row.label,title:row.label}} as unknown as Href);
+   router.push({pathname:'/ticket-results',params:{role:tab,value:row.label,title:row.label,...periodParams()}} as unknown as Href);
   }
  }
 
- return <ScrollView style={s.screen} contentContainerStyle={s.content}
+ return <SafeAreaView style={s.safe} edges={['top','left','right']}><ScrollView style={s.screen} contentContainerStyle={s.content}
   refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary}/>}>
-  <WorkspaceHeader/>
-  <Text style={s.eyebrow}>SUPPORT INTELLIGENCE</Text>
-  <Text style={s.title}>Insights</Text>
+  <View style={s.topHeader}><Pressable onPress={()=>router.back()} style={s.back}><Ionicons name="chevron-back" size={23} color={colors.text}/></Pressable><View style={s.topCopy}><Text style={s.topEyebrow}>SUPPORT INTELLIGENCE</Text><Text style={s.topTitle}>Insights</Text></View></View>
   <Text style={s.caption}>Shared 90-day DB snapshot</Text>
 
   <SupportPeriodFilter value={period} onChange={setPeriod}/>
@@ -82,8 +93,8 @@ export default function Insights(){
   </ScrollView>
 
   {tab!=='forms'?<View style={s.detected}>
-   <Text style={s.detectedLabel}>DETECTED FIELD</Text>
-   <Text style={s.detectedValue}>{fieldForDimension(fields,tab as SupportDimension)?.title||'Not detected'}</Text>
+   <Text style={s.detectedLabel}>{tab==='region'?'REGION SOURCE':'DETECTED FIELD'}</Text>
+   <Text style={s.detectedValue}>{tab==='region'?'Same region classification as Overview':fieldForDimension(fields,tab as SupportDimension)?.title||'Not detected'}</Text>
   </View>:null}
 
   {loading&&!snapshot?<State text="Initializing support data…"/>:null}
@@ -106,14 +117,15 @@ export default function Insights(){
    </Pressable>)}
    {!rows.length&&!loading?<View style={s.empty}><Text style={s.emptyTitle}>No values found</Text><Text style={s.emptyText}>Pull down once to refresh the shared 90-day snapshot.</Text></View>:null}
   </View>
- </ScrollView>
+ </ScrollView></SafeAreaView>
 }
 
 function Mini({label,value}:{label:string;value:number}){return <View style={s.mini}><Text style={s.miniValue}>{value}</Text><Text style={s.miniLabel}>{label}</Text></View>}
 function State({text,error=false}:{text:string;error?:boolean}){return <View style={s.state}><Text style={error?s.errorTitle:s.stateTitle}>{text}</Text></View>}
 
 const s=StyleSheet.create({
- screen:{flex:1,backgroundColor:colors.background},content:{paddingHorizontal:18,paddingTop:8,paddingBottom:120},
+ safe:{flex:1,backgroundColor:colors.background},screen:{flex:1,backgroundColor:colors.background},content:{paddingHorizontal:18,paddingTop:8,paddingBottom:120},
+ topHeader:{flexDirection:'row',alignItems:'center',gap:11,marginBottom:8},back:{width:42,height:42,borderRadius:14,borderWidth:1,borderColor:colors.border,backgroundColor:colors.surface,alignItems:'center',justifyContent:'center'},topCopy:{flex:1},topEyebrow:{color:colors.primary,fontSize:8,fontWeight:'900',letterSpacing:1},topTitle:{color:colors.text,fontSize:24,fontWeight:'900',marginTop:2},
  eyebrow:{color:colors.primary,fontSize:9,fontWeight:'900',letterSpacing:1},title:{color:colors.text,fontSize:28,fontWeight:'900',marginTop:4},caption:{color:colors.muted,fontSize:10,marginTop:4},
  summary:{flexDirection:'row',gap:7,marginTop:3},mini:{flex:1,minHeight:68,borderRadius:15,backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,padding:11},miniValue:{color:colors.text,fontSize:19,fontWeight:'900'},miniLabel:{color:colors.muted,fontSize:8,marginTop:4,fontWeight:'800'},
  tabs:{gap:7,paddingVertical:14},tab:{minHeight:40,flexDirection:'row',alignItems:'center',gap:6,borderRadius:13,borderWidth:1,borderColor:colors.border,backgroundColor:colors.surface,paddingHorizontal:11},tabActive:{backgroundColor:colors.primary,borderColor:colors.primary},tabText:{color:colors.muted,fontSize:9,fontWeight:'900'},tabTextActive:{color:'#fff'},

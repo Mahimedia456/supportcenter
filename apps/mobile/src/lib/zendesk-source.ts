@@ -2,7 +2,6 @@
 import * as api from '@/lib/api';
 import {
   getZendeskDbSnapshot,
-  syncZendeskDb,
 } from '@/lib/zendesk-db';
 
 export type ZendeskTicketUniverse = {
@@ -87,5 +86,6 @@ export async function loadZendeskTicketUniverse(
 export async function forceZendeskDbSync(
   token: string,
 ) {
-  return syncZendeskDb(token);
+  // Only reads the completed server snapshot. Bulk imports are scheduler-only.
+  return getZendeskDbSnapshot(token,{force:true});
 }
