@@ -2,6 +2,12 @@ name: Hourly Zendesk Snapshot Sync
 
 on:
   workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force a full Zendesk resync even if already fresh'
+        required: false
+        type: boolean
+        default: false
   schedule:
     # Two off-peak attempts per hour; the status guard avoids duplicate imports.
     - cron: '17 * * * *'
@@ -25,6 +31,7 @@ jobs:
       # GitHub repository variable may be set to "atomos angelbird" after
       # Angelbird credentials are configured on Vercel.
       SYNC_WORKSPACES: ${{ vars.SUPPORTCENTER_SYNC_WORKSPACES || 'atomos' }}
+      FORCE_SYNC: ${{ inputs.force_sync || 'false' }}
     steps:
       - name: Validate configuration
         shell: bash
@@ -45,6 +52,38 @@ jobs:
       - name: Install PostgreSQL publisher dependencies
         shell: bash
         run: npm ci --prefix backend --omit=dev --no-audit --no-fund
+      # P31_CA_PREFLIGHT: validate the same pinned CA used by Windows before any Zendesk import.
+      - name: Verify Supabase TLS certificate (fail before import)
+        shell: bash
+        env:
+          SUPPORTCENTER_SUPABASE_CA_PEM: ${{ secrets.SUPPORTCENTER_SUPABASE_CA_PEM }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPPORTCENTER_SUPABASE_CA_PEM:-}" ]]; then
+            echo 'P31_CA_SECRET_MISSING: set SUPPORTCENTER_SUPABASE_CA_PEM'; exit 1
+          fi
+          ca_path="$RUNNER_TEMP/supportcenter-supabase-ca.pem"
+          printf '%s\n' "$SUPPORTCENTER_SUPABASE_CA_PEM" > "$ca_path"
+          chmod 600 "$ca_path"
+          openssl x509 -in "$ca_path" -noout >/dev/null || { echo 'P31_CA_INVALID_PEM'; exit 1; }
+          echo "NODE_EXTRA_CA_CERTS=$ca_path" >> "$GITHUB_ENV"
+          NODE_EXTRA_CA_CERTS="$ca_path" node <<'NODE'
+          const {Client}=require('./backend/node_modules/pg');
+          (async()=>{
+            const raw=process.env.SUPPORTCENTER_DATABASE_URL;
+            if(!raw)throw Error('DATABASE_URL_MISSING');
+            const u=new URL(raw);
+            u.searchParams.delete('sslmode');
+            u.searchParams.delete('uselibpqcompat');
+            const c=new Client({connectionString:u.toString(),ssl:{rejectUnauthorized:true},connectionTimeoutMillis:20000});
+            c.on('error',()=>{});
+            try{await c.connect();await c.query('SELECT 1 AS ok');console.log('P31_GITHUB_DATABASE_TLS_PASS')}
+            finally{await c.end().catch(()=>{})}
+          })().catch(e=>{
+            const msg=String(e.message||e).replace(/postgres(?:ql)?:\/\/\S+/gi,'[REDACTED]');
+            console.error('P31_GITHUB_DATABASE_TLS_FAIL',msg.slice(0,220));process.exit(1);
+          });
+          NODE
       - name: Sync staged Zendesk snapshots
         shell: bash
         run: |
@@ -81,7 +120,7 @@ jobs:
             echo "=== Workspace: $workspace ==="
             # P31_GITHUB_PUBLISHER: skip recent complete reports, repair a partial
             # publication without fetching Zendesk again when source is fresh.
-            if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            if [[ "${FORCE_SYNC:-false}" != "true" ]]; then
               status_json=$(curl --fail-with-body --silent --show-error \
                 --connect-timeout 10 --max-time 35 \
                 -H "Authorization: Bearer $CRON_SECRET" \
