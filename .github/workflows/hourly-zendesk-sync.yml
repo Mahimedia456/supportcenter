@@ -3,7 +3,9 @@ name: Hourly Zendesk Snapshot Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: '37 * * * *'
+    # Two off-peak attempts per hour; the status guard avoids duplicate imports.
+    - cron: '17 * * * *'
+    - cron: '47 * * * *'
 
 permissions:
   contents: read
@@ -19,6 +21,7 @@ jobs:
     env:
       BASE_URL: https://supportcenter-kappa.vercel.app
       CRON_SECRET: ${{ secrets.SUPPORTCENTER_CRON_SECRET }}
+      SUPPORTCENTER_DATABASE_URL: ${{ secrets.SUPPORTCENTER_DATABASE_URL }}
       # GitHub repository variable may be set to "atomos angelbird" after
       # Angelbird credentials are configured on Vercel.
       SYNC_WORKSPACES: ${{ vars.SUPPORTCENTER_SYNC_WORKSPACES || 'atomos' }}
@@ -28,12 +31,20 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$CRON_SECRET" || { echo 'Missing SUPPORTCENTER_CRON_SECRET'; exit 1; }
+          test -n "$SUPPORTCENTER_DATABASE_URL" || { echo 'Missing SUPPORTCENTER_DATABASE_URL (one-time GitHub secret setup)'; exit 1; }
           for workspace in $SYNC_WORKSPACES; do
             [[ "$workspace" == 'atomos' || "$workspace" == 'angelbird' ]] || {
               echo "Invalid workspace: $workspace"; exit 1;
             }
           done
 
+      - name: Checkout trusted main branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install PostgreSQL publisher dependencies
+        shell: bash
+        run: npm ci --prefix backend --omit=dev --no-audit --no-fund
       - name: Sync staged Zendesk snapshots
         shell: bash
         run: |
@@ -68,6 +79,25 @@ jobs:
           }
           for workspace in $SYNC_WORKSPACES; do
             echo "=== Workspace: $workspace ==="
+            # P31_GITHUB_PUBLISHER: skip recent complete reports, repair a partial
+            # publication without fetching Zendesk again when source is fresh.
+            if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+              status_json=$(curl --fail-with-body --silent --show-error \
+                --connect-timeout 10 --max-time 35 \
+                -H "Authorization: Bearer $CRON_SECRET" \
+                --get --data-urlencode "workspace=$workspace" --data-urlencode 'stage=status' \
+                "$BASE_URL/api/zendesk-hourly-sync" 2>/dev/null || true)
+              if printf '%s' "$status_json" | jq -e \
+                '.ok == true and .periodsReady == true and (.ageSeconds | type == "number") and .ageSeconds >= 0 and .ageSeconds < 2700' >/dev/null 2>&1; then
+                echo "P31_FRESH_COMPLETE_SKIP workspace=$workspace"; continue
+              fi
+              if printf '%s' "$status_json" | jq -e \
+                '.ok == true and .periodsReady == false and (.sourceAgeSeconds | type == "number") and .sourceAgeSeconds >= 0 and .sourceAgeSeconds < 2700' >/dev/null 2>&1; then
+                echo "P31_REPAIR_PUBLISH_ONLY workspace=$workspace"
+                node backend/tools/p31-publish-periods.cjs --workspace "$workspace"
+                continue
+              fi
+            fi
             for stage in reference satisfaction metrics; do
               call_stage "$workspace" "$stage"
               jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null || {
@@ -107,5 +137,8 @@ jobs:
             jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null || {
               echo "$workspace/publish failed"; exit 1;
             }
+            # P31 worker is independent of Vercel function execution limits.
+            # All four reports become visible together at pointer activation.
+            node backend/tools/p31-publish-periods.cjs --workspace "$workspace"
             echo "=== Completed: $workspace ==="
           done

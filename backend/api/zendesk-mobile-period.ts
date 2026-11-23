@@ -16,11 +16,22 @@ export default async function handler(req:any,res:any){
     client=await connectDb();
     const workspace=await resolveWorkspaceSlug(client,identity);
     const metaOnly=String(req.query?.meta||'')==='1';
-    const result=await client.query(metaOnly
-      ? `SELECT source_synced_at FROM public.support_mobile_period_reports
-          WHERE workspace_slug=$1 AND period_key=$2 LIMIT 1`
-      : `SELECT source_synced_at,summary,report FROM public.support_mobile_period_reports
-          WHERE workspace_slug=$1 AND period_key=$2 LIMIT 1`,[workspace,period]);
+    // P31_VERSIONED_READ: a tiny active pointer makes all four periods atomic.
+    // Legacy P30 remains available until the first successful P31 activation.
+    const active=await client.query(`SELECT source_synced_at
+       FROM public.support_mobile_period_active WHERE workspace_slug=$1 LIMIT 1`,[workspace]);
+    const result=active.rows.length
+      ? await client.query(metaOnly
+          ? `SELECT source_synced_at FROM public.support_mobile_period_versions
+              WHERE workspace_slug=$1 AND period_key=$2 AND source_synced_at=$3::timestamptz LIMIT 1`
+          : `SELECT source_synced_at,summary,report FROM public.support_mobile_period_versions
+              WHERE workspace_slug=$1 AND period_key=$2 AND source_synced_at=$3::timestamptz LIMIT 1`,
+          [workspace,period,active.rows[0].source_synced_at])
+      : await client.query(metaOnly
+          ? `SELECT source_synced_at FROM public.support_mobile_period_reports
+              WHERE workspace_slug=$1 AND period_key=$2 LIMIT 1`
+          : `SELECT source_synced_at,summary,report FROM public.support_mobile_period_reports
+              WHERE workspace_slug=$1 AND period_key=$2 LIMIT 1`,[workspace,period]);
     if(!result.rows.length)return res.status(503).json({error:'P30_PERIOD_NOT_PUBLISHED',workspace,period});
     const entry=result.rows[0];
     // A source can be syncing; only this committed report is returned.
