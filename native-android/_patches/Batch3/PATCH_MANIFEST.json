@@ -1,0 +1,62 @@
+[
+  {
+    "path": "app/build.gradle.kts",
+    "base_sha256": "b2ae1e6abc0a03848c3a340f356b1d47d07eae0942063c2db4511cd10f2057b4",
+    "patched_sha256": "7f02a778b3ef4d2c89e66b871368653dc353b4b1b1f5c00328ce8e31494dd917"
+  },
+  {
+    "path": "app/src/main/AndroidManifest.xml",
+    "base_sha256": "3a0c74441f9510ddeb0494bc26a4fe0206fd6a615934795c85d382a3b74c1abb",
+    "patched_sha256": "f51f635f2918c0310cd8451f7ea941b13ec9d447d32d1180895bd022f8db2710"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/MainActivity.kt",
+    "base_sha256": "c8941bfe79f89640205ca15c803fd139b84f7aa255554cfe53946510c93db7dc",
+    "patched_sha256": "d86ef934f2ce5f752e3944da888913b518e4e707553b41ad244f2ae4b4e9dc2a"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/Models.kt",
+    "base_sha256": "71c9cfb80a3e10d2335e2389e71c1b189f81678c6bf38658cd645e5aa186af09",
+    "patched_sha256": "35ca5294c1de0318480070bc7c4a6950f63c0fb911b6604a796a0d2cca073d3f"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportAlerts.kt",
+    "base_sha256": null,
+    "patched_sha256": "d4135b7a8b1e81d54b1dc1b76c88b9591857b31825a5dab9aea53d86a65a6c7b"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportApi.kt",
+    "base_sha256": "4eee29fe5948b6641ac8c915f62d31f3f0e6840765925c2c1ea1e5587615bcd1",
+    "patched_sha256": "9acde77e3b5206e4a8b8f1a14514b5d9b5cafc376307c2b104933805d4a2929c"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportRepository.kt",
+    "base_sha256": "e53cc8179ab4ed50c12a495e9e782ff214cb473126786d8da475fdcf676c1713",
+    "patched_sha256": "df41bfcc2642705e94c98f0043fbf8f2a4dedf9747177db959c2a788fb5d2829"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch3Screens.kt",
+    "base_sha256": null,
+    "patched_sha256": "fbf8bbf1e4558d8d2a50fec831ee0165db3042627b60d25e415e9ddaff844727"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/LocalAlerts.kt",
+    "base_sha256": null,
+    "patched_sha256": "c635b6b929f5f28a23b70f8b1815590c7d1f96ceaecc37bdc590a540f20c0d86"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/MainViewModel.kt",
+    "base_sha256": "c5bab4e54df33c471df9016025c72bfef88525afa6f646bb7dd839d3d6ce9b94",
+    "patched_sha256": "bae2c1fa8433a3081a60ec8314d17ad04bb923ebaccad21f941e1515bcba0f9e"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+    "base_sha256": "50850a32441e74b67f5800b98e138f279a7f07d3f3c5f0fffeb5b41268fcc2c1",
+    "patched_sha256": "5b803b517f46569251fa5cb078cc47917d27ac9f6b10f11db326e7224bfc5301"
+  },
+  {
+    "path": "app/src/main/res/drawable/ic_notification.xml",
+    "base_sha256": null,
+    "patched_sha256": "85afd326e33b720b46a778fcc2ba608b18c841011005e4c735ea8d658335802a"
+  }
+]

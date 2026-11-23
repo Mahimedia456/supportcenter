@@ -1,0 +1,47 @@
+[
+  {
+    "path": "GET-GRADLE.ps1",
+    "base_sha256": "6752480017b1f1c6987a546f18d01bb31df05728f1fbd52b6133dacced950187",
+    "patched_sha256": "583f8d5fede36fc8c9ae2a9eb3c92d677d68be256bcb5112f4ba39268751b75c"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/MainActivity.kt",
+    "base_sha256": "bc6a8df60193cbdb6186a15f09ef8e1f7740e52155d5ae55b6825946c0ef6cc1",
+    "patched_sha256": "c8941bfe79f89640205ca15c803fd139b84f7aa255554cfe53946510c93db7dc"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/Models.kt",
+    "base_sha256": "c97db492cfedd8e6873e492577202b2835162f7d010c31f8712c8487d9ab21d5",
+    "patched_sha256": "71c9cfb80a3e10d2335e2389e71c1b189f81678c6bf38658cd645e5aa186af09"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportAnalytics.kt",
+    "base_sha256": null,
+    "patched_sha256": "f6e90473a3ecf231f99e7c768502d8f578e40a0bc34a111d5a073ea1b0a88a5d"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportApi.kt",
+    "base_sha256": "a36b156cb23221e6141cd102de78f2dc781602744cd661f21eda7ea954e435b3",
+    "patched_sha256": "4eee29fe5948b6641ac8c915f62d31f3f0e6840765925c2c1ea1e5587615bcd1"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportRepository.kt",
+    "base_sha256": "98fcfd10142e398e92900b48f81b364fa2f43e59d0e0c76066fcfbd23032fda6",
+    "patched_sha256": "e53cc8179ab4ed50c12a495e9e782ff214cb473126786d8da475fdcf676c1713"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch2Screens.kt",
+    "base_sha256": null,
+    "patched_sha256": "f75b5fcd04120910ddce18f4dee8b0730b6573e8469e0dc6abb0e223ca7a4058"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/MainViewModel.kt",
+    "base_sha256": "4c3c078a7971a28a14bd98381b40b16190d62e3d43a19ac3bc8a5a8f8c165317",
+    "patched_sha256": "c5bab4e54df33c471df9016025c72bfef88525afa6f646bb7dd839d3d6ce9b94"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+    "base_sha256": "0266f3f1adf3a9b2900c9f839347b87dfae7c70f45bc948aa5615779c1ef5a92",
+    "patched_sha256": "50850a32441e74b67f5800b98e138f279a7f07d3f3c5f0fffeb5b41268fcc2c1"
+  }
+]

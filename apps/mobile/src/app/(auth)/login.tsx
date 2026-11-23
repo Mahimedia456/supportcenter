@@ -23,7 +23,7 @@ import { finalTheme } from '@/constants/final-theme';
 import { useAuth } from '@/context/AuthContext';
 
 const BACKGROUND = require('../../../assets/brand/final/auth-background.png');
-const LOGO = require('../../../assets/brand/final/support-command-center-mark.png');
+const LOGO = require('../../../assets/brand/p27-final/supportcenter-mark.png');
 
 let launchIntroPlayed = false;
 

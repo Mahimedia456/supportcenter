@@ -1,0 +1,105 @@
+name: Hourly Zendesk Snapshot Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '12 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supportcenter-zendesk-snapshot-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      BASE_URL: https://supportcenter-kappa.vercel.app
+      CRON_SECRET: ${{ secrets.SUPPORTCENTER_CRON_SECRET }}
+      # GitHub repository variable may be set to "atomos angelbird" after
+      # Angelbird credentials are configured on Vercel.
+      SYNC_WORKSPACES: ${{ vars.SUPPORTCENTER_SYNC_WORKSPACES || 'atomos' }}
+    steps:
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo 'Missing SUPPORTCENTER_CRON_SECRET'; exit 1; }
+          for workspace in $SYNC_WORKSPACES; do
+            [[ "$workspace" == 'atomos' || "$workspace" == 'angelbird' ]] || {
+              echo "Invalid workspace: $workspace"; exit 1;
+            }
+          done
+
+      - name: Sync staged Zendesk snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          call_stage() {
+            local workspace="$1" stage="$2" cursor="${3:-}"
+            local result
+            if [[ -n "$cursor" ]]; then
+              result=$(curl --fail-with-body --silent --show-error \
+                --connect-timeout 20 --max-time 240 \
+                --retry 2 --retry-delay 5 --retry-all-errors \
+                -H "Authorization: Bearer $CRON_SECRET" \
+                --get --data-urlencode "workspace=$workspace" \
+                --data-urlencode "stage=$stage" \
+                --data-urlencode "cursor=$cursor" \
+                "$BASE_URL/api/zendesk-hourly-sync")
+            else
+              result=$(curl --fail-with-body --silent --show-error \
+                --connect-timeout 20 --max-time 240 \
+                --retry 2 --retry-delay 5 --retry-all-errors \
+                -H "Authorization: Bearer $CRON_SECRET" \
+                --get --data-urlencode "workspace=$workspace" \
+                --data-urlencode "stage=$stage" \
+                "$BASE_URL/api/zendesk-hourly-sync")
+            fi
+            # A 200 with skipped=true is NOT a successful sync.
+            echo "$result" | jq -e '.ok == true and .skipped != true and .workspace != null' >/dev/null || {
+              echo "Invalid/skipped sync response for $workspace/$stage"; exit 1;
+            }
+            echo "$result" | jq -c '{workspace,stage,done,count,remaining,counts}'
+            printf '%s\n' "$result" >/tmp/supportcenter-sync-stage.json
+          }
+          for workspace in $SYNC_WORKSPACES; do
+            echo "=== Workspace: $workspace ==="
+            for stage in reference satisfaction metrics; do
+              call_stage "$workspace" "$stage"
+              jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null || {
+                echo "$workspace/$stage did not finish"; exit 1;
+              }
+              sleep 2
+            done
+            for stage in tickets metric-events; do
+              cursor=''
+              finished=false
+              for i in $(seq 1 250); do
+                echo "$workspace/$stage chunk $i"
+                call_stage "$workspace" "$stage" "$cursor"
+                if jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null; then
+                  finished=true; break
+                fi
+                cursor=$(jq -r '.next // empty' /tmp/supportcenter-sync-stage.json)
+                [[ -n "$cursor" ]] || { echo "Missing next cursor for $workspace/$stage"; exit 1; }
+                sleep 2
+              done
+              [[ "$finished" == true ]] || { echo "$workspace/$stage exhausted chunk limit"; exit 1; }
+            done
+            # Pre-cache latest 80 ticket conversations; details for other
+            # tickets are loaded on demand by the authenticated backend.
+            finished=false
+            for i in $(seq 1 30); do
+              call_stage "$workspace" conversations
+              if jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null; then
+                finished=true; break
+              fi
+              sleep 2
+            done
+            [[ "$finished" == true ]] || { echo "$workspace/conversations exceeded batch cap"; exit 1; }
+            echo "=== Completed: $workspace ==="
+          done

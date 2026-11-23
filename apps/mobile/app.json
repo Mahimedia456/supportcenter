@@ -7,15 +7,15 @@
     "scheme": "supportcommandcenter",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "icon": "./assets/brand/app-icon.png",
+    "icon": "./assets/brand/p27-final/app-icon.png",
     "android": {
       "package": "com.mahimediasolutions.supportcommandcenter",
       "versionCode": 9,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/brand/adaptive-icon-foreground.png",
-        "backgroundImage": "./assets/brand/adaptive-icon-background.png",
-        "backgroundColor": "#043B36",
-        "monochromeImage": "./assets/brand/adaptive-icon-monochrome.png"
+        "foregroundImage": "./assets/brand/p27-final/adaptive-foreground.png",
+        "backgroundImage": "./assets/brand/p27-final/adaptive-background.png",
+        "backgroundColor": "#F7FCFA",
+        "monochromeImage": "./assets/brand/p27-final/adaptive-monochrome.png"
       },
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -31,7 +31,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#F7FCFA",
-          "image": "./assets/brand/native-splash-transparent.png",
+          "image": "./assets/brand/p27-final/native-splash.png",
           "imageWidth": 180,
           "resizeMode": "contain"
         }

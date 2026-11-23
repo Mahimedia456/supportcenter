@@ -1,0 +1,24 @@
+[
+  {
+    "path": "native-android/app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+    "allowed_base_sha256": [
+      "7ec79c2aaa29d80c20fd04182f604910ee38636306526ace19d662404683b0cd"
+    ],
+    "patched_sha256": "584bf40143bf5e7d14264fb4fd47067e5f02c972e0b2db934c55a5b1d313f23c"
+  },
+  {
+    "path": "backend/api/zendesk-hourly-sync.ts",
+    "allowed_base_sha256": [
+      "274d7dedd69f971592023d7dc184ea2049f28c54b0d2ca2c8313493113502968"
+    ],
+    "patched_sha256": "7c04ac471633c0339fbc9e61fbb96ef36aeb6feb64f83b2631e166e7ddacbd29"
+  },
+  {
+    "path": ".github/workflows/hourly-zendesk-sync.yml",
+    "allowed_base_sha256": [
+      "e2a4d3f6804facfffdaf26b0bfe79b33b102690c9d6dc1212b42327cbcec437c",
+      "95d3842fbe9a708baaba506e32f1b7319f904b67aca34728678bc18065483502"
+    ],
+    "patched_sha256": "e2a4d3f6804facfffdaf26b0bfe79b33b102690c9d6dc1212b42327cbcec437c"
+  }
+]

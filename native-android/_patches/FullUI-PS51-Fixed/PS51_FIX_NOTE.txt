@@ -1,0 +1,1 @@
+PS51-fixed release of Full UI + Auth Recovery. Installer and checker normalize the JSON root array before SHA-256 validation. Bundled Kotlin payload, manifest, base hash allowlists and API settings are byte-for-byte unchanged. Extract to a NEW folder, never directly overwrite live Kotlin files.

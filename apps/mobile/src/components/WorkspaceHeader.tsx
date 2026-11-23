@@ -19,9 +19,7 @@ import {
 import {
   useAuth,
 } from '@/context/AuthContext';
-import {
-  WorkspaceLogo,
-} from '@/components/WorkspaceLogo';
+import { WorkspaceLogo, getWorkspaceBrandLabel } from '@/components/WorkspaceLogo';
 import {
   colors,
 } from '@/constants/theme';
@@ -77,9 +75,7 @@ export function WorkspaceHeader({
               numberOfLines={1}
             >
               {
-                session
-                  .workspace
-                  .supportLabel
+                getWorkspaceBrandLabel(session.workspace.slug)
               }
             </Text>
 

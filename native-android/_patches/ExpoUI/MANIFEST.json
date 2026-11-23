@@ -1,0 +1,29 @@
+[
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+    "allowed_base_sha256": [
+      "96b9b9683aeea0d4f4adc143aff009f17a2155a370be767a0b4a2f7d516768af",
+      "5b803b517f46569251fa5cb078cc47917d27ac9f6b10f11db326e7224bfc5301"
+    ],
+    "patched_sha256": "c0023d0bd85ba6ba40941491c5523f17fd453fc0792156e762acbfcfa3ccbe85"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch2Screens.kt",
+    "allowed_base_sha256": [
+      "f75b5fcd04120910ddce18f4dee8b0730b6573e8469e0dc6abb0e223ca7a4058"
+    ],
+    "patched_sha256": "4ea322b8472f59bbf8adc7e8bfe403aebb0273d8db54001ca88c0416ffed48fd"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch3Screens.kt",
+    "allowed_base_sha256": [
+      "fbf8bbf1e4558d8d2a50fec831ee0165db3042627b60d25e415e9ddaff844727"
+    ],
+    "patched_sha256": "4afdc800e29684f6dfe1f7e63aac14f1a7f350c612539e307ee6cc07a0268853"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/ExpoParityLogin.kt",
+    "allowed_base_sha256": [],
+    "patched_sha256": "8a1894c6123ea0fc870269210caa23543a318025ff142213de433e81a02d2e1f"
+  }
+]

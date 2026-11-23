@@ -1,0 +1,142 @@
+[
+  {
+    "path": ".gitignore",
+    "sha256": "3cc07dc79ca3fe4ee9dcd8b861553024376ed795b00561cb32678af8d7e23ac0"
+  },
+  {
+    "path": "CHECK-PROJECT.ps1",
+    "sha256": "8caf0c3fe2140cd82ee615b32eb313cf562f1dad0336322f07bd3154c93478b4"
+  },
+  {
+    "path": "COPY-WORKSPACE-LOGOS.ps1",
+    "sha256": "aa57ac20feb47bf2af9402dfb623d77c2c4e4edbef8114a486366e48f6451e80"
+  },
+  {
+    "path": "GET-GRADLE.ps1",
+    "sha256": "6752480017b1f1c6987a546f18d01bb31df05728f1fbd52b6133dacced950187"
+  },
+  {
+    "path": "README.md",
+    "sha256": "165b78d2e25a1cecf90e582cb36f7e0ab8d22349f4c38f716f24878360b13097"
+  },
+  {
+    "path": "RUN-BUILD.ps1",
+    "sha256": "cbd7efb265241ecb4c6a6c777b5b0884b26cc3221dabe46cf9e8396307859de5"
+  },
+  {
+    "path": "RUN-INSTALL.ps1",
+    "sha256": "e6e4e5813be4c9fce8a6775b4a972ed0e1668b9e055483bc877373b9ec12bb2e"
+  },
+  {
+    "path": "VALIDATION_REPORT.md",
+    "sha256": "f5e7db8ba87648beb47cbb82b074ebcfd16922aff7f7ab02c8c7e29a68186762"
+  },
+  {
+    "path": "app/build.gradle.kts",
+    "sha256": "b2ae1e6abc0a03848c3a340f356b1d47d07eae0942063c2db4511cd10f2057b4"
+  },
+  {
+    "path": "app/proguard-rules.pro",
+    "sha256": "a87f880814bf83fc84b5b0925a7453d452581112899845f28b26df69b20848c3"
+  },
+  {
+    "path": "app/src/main/AndroidManifest.xml",
+    "sha256": "3a0c74441f9510ddeb0494bc26a4fe0206fd6a615934795c85d382a3b74c1abb"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/MainActivity.kt",
+    "sha256": "bc6a8df60193cbdb6186a15f09ef8e1f7740e52155d5ae55b6825946c0ef6cc1"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/Models.kt",
+    "sha256": "c97db492cfedd8e6873e492577202b2835162f7d010c31f8712c8487d9ab21d5"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SecureFiles.kt",
+    "sha256": "c611ad1951818f1a5e0c6daf26e55a5bf92cfb4a5e9c01b3543bf399909415ad"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportApi.kt",
+    "sha256": "a36b156cb23221e6141cd102de78f2dc781602744cd661f21eda7ea954e435b3"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportRepository.kt",
+    "sha256": "98fcfd10142e398e92900b48f81b364fa2f43e59d0e0c76066fcfbd23032fda6"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/MainViewModel.kt",
+    "sha256": "4c3c078a7971a28a14bd98381b40b16190d62e3d43a19ac3bc8a5a8f8c165317"
+  },
+  {
+    "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+    "sha256": "0266f3f1adf3a9b2900c9f839347b87dfae7c70f45bc948aa5615779c1ef5a92"
+  },
+  {
+    "path": "app/src/main/res/drawable-nodpi/brand_angelbird.png",
+    "sha256": "a28ac6ea3cec844c3e0b10544c7313d0ebf8d555dbcc2cb9129a863c661837b7"
+  },
+  {
+    "path": "app/src/main/res/drawable-nodpi/brand_atomos.png",
+    "sha256": "a28ac6ea3cec844c3e0b10544c7313d0ebf8d555dbcc2cb9129a863c661837b7"
+  },
+  {
+    "path": "app/src/main/res/drawable-nodpi/brand_supportcenter.png",
+    "sha256": "a28ac6ea3cec844c3e0b10544c7313d0ebf8d555dbcc2cb9129a863c661837b7"
+  },
+  {
+    "path": "app/src/main/res/drawable-nodpi/ic_launcher_foreground.png",
+    "sha256": "484e4be7ade2c669c6b5cfde79feef219ea1cf7ebd797a19381f46f9848995fe"
+  },
+  {
+    "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+    "sha256": "5f3b1ed2282af327c78539428c3398a99a7e9a09051c2ae2cf7aa27068201319"
+  },
+  {
+    "path": "app/src/main/res/mipmap-hdpi/ic_launcher.png",
+    "sha256": "b39be928b6934ea2ac30198d99d5b86de6cc2dd41027abb115799dd44dd8672d"
+  },
+  {
+    "path": "app/src/main/res/mipmap-mdpi/ic_launcher.png",
+    "sha256": "1b6efcbf67b6e745035b7183205fcaebb6ec016c6e7066f02809c2536d513ee9"
+  },
+  {
+    "path": "app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+    "sha256": "51a6388b1ce32adbd629508c4df52eb421534e506fc83801fa0a52171634b59b"
+  },
+  {
+    "path": "app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+    "sha256": "85ba6ebd42e9ad4f2f3725a1e2b99e9e2498f1f2c5d03aba5a3e50a37931c266"
+  },
+  {
+    "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    "sha256": "05812612a44910d7062fa3c4c6b2ca3763092cddb26a43a0dc706d52748b898f"
+  },
+  {
+    "path": "app/src/main/res/values/colors.xml",
+    "sha256": "9ee52f13597afee4d522038d850f0c6346397e099b6508a7dff2de4b338896ed"
+  },
+  {
+    "path": "app/src/main/res/values/strings.xml",
+    "sha256": "ef53e72e417f478cb38e2ff381baab56fcec8bcfbc4c7c772856b200b6c46d28"
+  },
+  {
+    "path": "app/src/main/res/values/styles.xml",
+    "sha256": "b22ec9a0d00e20625ea56ed5107f3dd710414f14cf1e85d7fed0a3eb2d969898"
+  },
+  {
+    "path": "build.gradle.kts",
+    "sha256": "1df553bc4ca0f8d14c45baebb13c5a3f4c4d949be18799c1f99e8829581c4cee"
+  },
+  {
+    "path": "gradle/wrapper/gradle-wrapper.properties",
+    "sha256": "c163ab828b2b3e403a0190ad0e79b1c1bbd0e0b0384e2407441c62e9a5602823"
+  },
+  {
+    "path": "gradle.properties",
+    "sha256": "f694ce2981206ff7cefa930919357b049bc10d34142ad09583aada32239b3e34"
+  },
+  {
+    "path": "settings.gradle.kts",
+    "sha256": "f7929ffd74c4b238e2f87a94e0058a599042c75a89221cbb6ff68d3d00f95f62"
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "input_sources": [
+    "Original user-uploaded Expo mobile(6).zip, checkout_mobile/src/components/ui/AppTextField.tsx, final-theme.ts, MetricCard.tsx, TicketCard.tsx, WorkspaceHeader.tsx",
+    "Native Batch 1, Batch 2, Batch 3, 401/hotfix, prior Expo UI patch"
+  ],
+  "package_files": [
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportApi.kt",
+      "sha256": "a60ebb599c5911dad6f7dc7b5c748ce10750da3f53118dcee04f80f8e7005a59",
+      "allowed_baseline_variants": 3
+    },
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch2Screens.kt",
+      "sha256": "861c78568585f8023ef15e24f983d096209d2a308bf16e63f7d9001b69638bad",
+      "allowed_baseline_variants": 2
+    },
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/Batch3Screens.kt",
+      "sha256": "c20afb16f1c03413722d470761b44bd7ee3803b7e2a52ab3b1dd150cef52ec3c",
+      "allowed_baseline_variants": 2
+    },
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/ExpoParityLogin.kt",
+      "sha256": "42581ffba2a8e39e353fb708373336b3348c59a5eb92eb974fc825beaff71419",
+      "allowed_baseline_variants": 1
+    },
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportDesign.kt",
+      "sha256": "2eb73fef1febaaedf5a02e504f0cc92264fdbe94581ed5d18c9cb177e8bc23ab",
+      "allowed_baseline_variants": 0
+    },
+    {
+      "file": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/SupportScreens.kt",
+      "sha256": "7ec79c2aaa29d80c20fd04182f604910ee38636306526ace19d662404683b0cd",
+      "allowed_baseline_variants": 5
+    }
+  ],
+  "offline_checks": [
+    "Source digest checks",
+    "Allowed baseline hashes",
+    "Expo tokens and password eye references",
+    "Endpoint parity /auth/login and /api/zendesk-cache-snapshot",
+    "No database credentials in patch"
+  ],
+  "not_verified": [
+    "Kotlin Gradle build on Windows",
+    "Physical APK install/login",
+    "Full Expo deep-link route parity"
+  ]
+}

@@ -4,7 +4,7 @@ import { Redirect, Slot, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { colors } from '@/constants/theme';
 
-const BRAND_MARK = require('../../assets/brand/final/support-command-center-mark.png');
+const BRAND_MARK = require('../../assets/brand/p27-final/supportcenter-mark.png');
 
 function Gate() {
   const { session, booting } = useAuth();
