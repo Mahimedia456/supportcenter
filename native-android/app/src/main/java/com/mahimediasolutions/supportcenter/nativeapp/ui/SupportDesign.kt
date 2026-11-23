@@ -121,7 +121,7 @@ internal fun ScEmptyState(message: String) {
 internal fun ScPeriodRow(days: Int, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(1 to "Today", 7 to "7 Days", 30 to "30 Days", 90 to "90 Days")
+        listOf(1 to "Today", 30 to "1 Month", 60 to "2 Months", 90 to "3 Months")
             .forEach { (period, label) ->
                 val selected = period == days
                 FilterChip(

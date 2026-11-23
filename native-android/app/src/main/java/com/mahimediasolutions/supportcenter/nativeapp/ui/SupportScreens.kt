@@ -422,7 +422,7 @@ private fun OverviewPreview(state: MainUiState, onPeriod: (Int) -> Unit,
         fontSize = 11.sp, color = Sub)
     Spacer(Modifier.height(15.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
-        listOf(1 to "Today", 7 to "7 Days", 30 to "30 Days", 90 to "90 Days").forEach { (days, name) ->
+        listOf(1 to "Today", 30 to "1 Month", 60 to "2 Months", 90 to "3 Months").forEach { (days, name) ->
             FilterChip(selected = state.periodDays == days, onClick = { onPeriod(days) },
                 label = { Text(name, fontSize = 11.sp) }, modifier = Modifier.weight(1f))
         }

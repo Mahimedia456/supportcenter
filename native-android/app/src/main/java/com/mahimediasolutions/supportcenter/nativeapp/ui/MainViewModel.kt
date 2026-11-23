@@ -24,7 +24,7 @@ data class MainUiState(
     val cached: Boolean = false,
     val error: String? = null,
     val tab: String = "Overview",
-    val periodDays: Int = 90,
+    val periodDays: Int = 1,
     val selectedTicketId: Long? = null,
     val selectedDevice: String? = null,
     val conversation: TicketConversation? = null,
@@ -68,6 +68,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var lastMetaCheckElapsed: Long = 0L
+    private var p30SnapshotJob: kotlinx.coroutines.Job? = null
+    private var snapshotJob: kotlinx.coroutines.Job? = null
 
     /** Foreground resume / periodic check. Downloads nothing if server version is unchanged. */
     fun checkForUpdates() {
@@ -80,40 +82,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshSnapshot() {
         val session = _state.value.session ?: return
         if (_state.value.refreshing) return
+        val days = _state.value.periodDays
         lastMetaCheckElapsed = android.os.SystemClock.elapsedRealtime()
-        viewModelScope.launch {
+        p30SnapshotJob?.cancel()
+        p30SnapshotJob = viewModelScope.launch {
             _state.value = _state.value.copy(
-                refreshing = true, error = null,
-                snapshotStage = "Checking", snapshotStageDetail = "Checking published server snapshot",
-                snapshotItemsReceived = 0, previewTickets = emptyList()
+                refreshing = true, error = null, snapshotStage = "Published DB",
+                snapshotStageDetail = "Reading selected period", snapshotItemsReceived = 0,
+                previewTickets = emptyList()
             )
-            val loaded = repo.loadSnapshotProgressive(session) { progress ->
-                if (sameSession(session)) {
-                    // Cache is published immediately, even before the first network page finishes.
-                    _state.value = _state.value.copy(
-                        snapshot = progress.cachedSnapshot ?: _state.value.snapshot,
-                        cached = progress.cachedSnapshot != null && _state.value.snapshot == null || _state.value.cached,
-                        snapshotStage = progress.stage,
-                        snapshotStageDetail = progress.detail,
-                        snapshotItemsReceived = progress.received,
-                        previewTickets = progress.previewTickets
-                    )
+            try {
+                val loaded = repo.loadSnapshotProgressive(session, days) { progress ->
+                    if (sameSession(session) && _state.value.periodDays == days) {
+                        _state.value = _state.value.copy(
+                            snapshot = progress.cachedSnapshot ?: _state.value.snapshot,
+                            cached = progress.stage == "Published cache",
+                            snapshotStage = progress.stage,
+                            snapshotStageDetail = progress.detail,
+                            snapshotItemsReceived = progress.received,
+                            previewTickets = progress.previewTickets
+                        )
+                    }
+                }
+                if (!sameSession(session) || _state.value.periodDays != days) return@launch
+                val selected = _state.value.selectedTicketId?.takeIf { id ->
+                    loaded.data?.tickets?.any { it.id == id } == true
+                }
+                _state.value = _state.value.copy(
+                    session = loaded.session, snapshot = loaded.data, cached = loaded.fromCache,
+                    refreshing = false, error = loaded.error,
+                    snapshotStage = "", snapshotStageDetail = "", snapshotItemsReceived = 0,
+                    previewTickets = emptyList(), selectedTicketId = selected,
+                    conversation = if (selected != null) _state.value.conversation else null
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (sameSession(session) && _state.value.periodDays == days) {
+                    _state.value = _state.value.copy(refreshing = false,
+                        error = e.message ?: "Published period unavailable")
                 }
             }
-            if (!sameSession(session)) return@launch
-            // Automatic version checks must not unexpectedly navigate the manager away
-            // from a ticket, device, or active tab.
-            val selected = _state.value.selectedTicketId?.takeIf { id ->
-                loaded.data?.tickets?.any { it.id == id } == true
-            }
-            _state.value = _state.value.copy(
-                refreshing = false, session = loaded.session, snapshot = loaded.data,
-                cached = loaded.fromCache, error = loaded.error,
-                snapshotStage = "", snapshotStageDetail = "", snapshotItemsReceived = 0,
-                previewTickets = emptyList(),
-                selectedTicketId = selected,
-                conversation = if (selected != null) _state.value.conversation else null
-            )
         }
     }
 
@@ -123,8 +132,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setPeriod(days: Int) {
-        if (days !in listOf(1, 7, 30, 90)) return
-        _state.value = _state.value.copy(periodDays = days)
+        if (days !in listOf(1, 30, 60, 90)) return
+        if (days == _state.value.periodDays) return
+        p30SnapshotJob?.cancel()
+        _state.value = _state.value.copy(
+            periodDays = days, refreshing = false, snapshot = null,
+            cached = false, error = null, selectedTicketId = null,
+            selectedDevice = null, conversation = null, previewTickets = emptyList(),
+            snapshotStage = "", snapshotStageDetail = ""
+        )
+        refreshSnapshot()
     }
 
     fun openTicket(ticketId: Long) {
@@ -191,6 +208,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signOut() {
+        snapshotJob?.cancel()
         val session = _state.value.session ?: return
         _state.value = MainUiState(starting = false)
         viewModelScope.launch { withContext(Dispatchers.IO) { repo.logout(session) } }

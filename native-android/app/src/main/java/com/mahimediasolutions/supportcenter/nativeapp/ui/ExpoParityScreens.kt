@@ -136,7 +136,7 @@ private fun label(s: String) = s.replace('_',' ').replaceFirstChar { it.uppercas
 }
 @Composable private fun PeriodP(days: Int, onPeriod: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        listOf(1 to "Today", 7 to "7 Days", 30 to "30 Days", 90 to "90 Days").forEach { (n,title) ->
+        listOf(1 to "Today", 30 to "1 Month", 60 to "2 Months", 90 to "3 Months").forEach { (n,title) ->
             FilterChip(selected = n == days, onClick = { onPeriod(n) },
                 label = { Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = P.mint,

@@ -50,13 +50,13 @@ internal class SupportRepository(context: Context) {
     private fun existingFallback(raw: String): SupportSession? =
         try { SupportSession.fromJson(JSONObject(raw)) } catch (_: Exception) { null }
 
-    private fun cacheName(s: SupportSession): String {
+    private fun cacheName(s: SupportSession, periodDays: Int = 90): String {
         val safeId = s.user.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-        return "snapshot-${s.workspace.slug}-$safeId.dat"
+        return "snapshot-${s.workspace.slug}-$safeId-period$periodDays.dat"
     }
 
-    private fun readCache(s: SupportSession): SnapshotData? = try {
-        secure.read(cacheName(s))?.let { SnapshotData.fromJson(JSONObject(it)) }?.takeIf {
+    private fun readCache(s: SupportSession, periodDays: Int = 90): SnapshotData? = try {
+        secure.read(cacheName(s, periodDays))?.let { SnapshotData.fromJson(JSONObject(it)) }?.takeIf {
             it.meta.workspace == s.workspace.slug
         }
     } catch (_: Exception) { null }
@@ -150,127 +150,61 @@ internal class SupportRepository(context: Context) {
      * Only the last verified published server version becomes a SnapshotData.
      * The callback runs on the caller's coroutine context, not the IO thread.
      */
+    private fun fastCacheName(s: SupportSession, days: Int): String {
+        val userId = s.user.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        return "published-${s.workspace.slug}-$userId-period$days.dat"
+    }
+
+    private fun fastCached(s: SupportSession, days: Int): SnapshotData? = try {
+        secure.read(fastCacheName(s, days))?.let { SnapshotData.fromJson(JSONObject(it)) }
+            ?.takeIf { it.meta.workspace == s.workspace.slug && it.meta.snapshotStatus == "ready" }
+    } catch (_: Exception) { null }
+
+    /** Read a single server-published period. Never download 90 days during Today login. */
     suspend fun loadSnapshotProgressive(
         session: SupportSession,
+        periodDays: Int = 1,
         emit: suspend (SnapshotLoadProgress) -> Unit
     ): LoadedSnapshot {
+        require(periodDays in listOf(1, 30, 60, 90))
         var current = session
-        val cached = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readCache(session) }
-        if (cached != null) {
-            emit(SnapshotLoadProgress(stage = "Saved snapshot", detail = "Showing last complete 90-day report", cachedSnapshot = cached))
+        val cached = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            fastCached(current, periodDays)
         }
+        if (cached != null) emit(SnapshotLoadProgress(
+            stage = "Published cache", detail = "Showing saved period", cachedSnapshot = cached))
         try {
-            var response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                withAccessRefresh(current) { api.snapshotMeta(it.accessToken) }
-            }
-            current = response.first
-            val initialMeta = response.second
-            if (initialMeta.workspace != current.workspace.slug) {
-                throw IllegalStateException("Snapshot workspace mismatch")
-            }
-            if (initialMeta.snapshotStatus != "ready" || initialMeta.syncStatus != "ok" || initialMeta.syncedAt.isNullOrBlank()) {
-                throw IllegalStateException(
-                    if (initialMeta.syncStatus == "syncing")
-                        "Server snapshot is syncing. Keeping the previous complete report until publication."
-                    else "Complete server snapshot is not ready yet (status: ${initialMeta.syncStatus})."
-                )
-            }
-            if (cached != null && cached.meta.syncedAt == initialMeta.syncedAt &&
-                cached.meta.syncStatus == "ok" && cached.slaLoaded &&
-                cached.satisfactionLoaded && cached.metricsLoaded) {
-                emit(SnapshotLoadProgress(stage = "Up to date", detail = "Latest published server version verified", cachedSnapshot = cached))
-                return LoadedSnapshot(current, cached, false, null)
-            }
-
-            // Every part is bounded, authenticated, and paginated. Ticket previews are not KPI totals.
-            suspend fun part(
-                name: String,
-                maxPages: Int,
-                onPage: suspend (List<org.json.JSONObject>, Int, Boolean) -> Unit = { _, _, _ -> }
-            ): List<org.json.JSONObject> {
-                val all = ArrayList<org.json.JSONObject>()
-                var offset = 0
-                for (page in 1..maxPages) {
-                    val fetched = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        withAccessRefresh(current) { s ->
-                            api.snapshotPartPage(s.accessToken, s.workspace.slug, name, offset, if (name == "tickets") 40 else 60)
-                        }
-                    }
-                    current = fetched.first
-                    val (items, next) = fetched.second
-                    all.addAll(items)
-                    if (all.size > 50_000) throw IllegalStateException("Part $name unexpectedly large")
-                    onPage(items, all.size, next == null)
-                    if (next == null) return all
-                    offset = next
+            // If the published version has not changed, the saved period is instantly reusable.
+            if (cached != null) {
+                val checked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    withAccessRefresh(current) { api.fastPublishedVersion(it.accessToken,it.workspace.slug,periodDays) }
                 }
-                throw IllegalStateException("Part $name exceeded $maxPages pages")
-            }
-
-            val ticketRows = ArrayList<Ticket>()
-            part("tickets", 300) { page, _, done ->
-                ticketRows.addAll(page.map(Ticket::fromJson).filter { it.id > 0L })
-                emit(SnapshotLoadProgress(
-                    stage = "Tickets", detail = if (done) "Ticket pages complete" else "Reading 90-day ticket pages",
-                    received = ticketRows.size,
-                    // Keep only a few preview rows so Compose does not recompose thousands repeatedly.
-                    previewTickets = ticketRows.takeLast(12),
-                    cachedSnapshot = cached
-                ))
-            }
-            val fields = part("fields", 30).map(ReferenceField::fromJson)
-            emit(SnapshotLoadProgress("Custom fields", "Ticket classifications and device fields", fields.size, cachedSnapshot = cached))
-            val forms = part("forms", 30).map(LookupItem::fromJson)
-            val agents = part("agents", 30).map(LookupItem::fromJson)
-            val groups = part("groups", 30).map(LookupItem::fromJson)
-            emit(SnapshotLoadProgress("Reference data", "Forms, agents and groups loaded", fields.size + forms.size + agents.size + groups.size, cachedSnapshot = cached))
-
-            // Supplemental parts may be unavailable, but must never silently be treated as real zeros.
-            val slaResult = runCatching { part("metric-events", 850) }
-            emit(SnapshotLoadProgress("SLA events", "Server-filtered breach events", slaResult.getOrNull()?.size ?: 0, cachedSnapshot = cached))
-            val satisfactionResult = runCatching {
-                part("satisfaction", 150) { _, received, _ ->
-                    emit(SnapshotLoadProgress("Satisfaction", "Loading ratings", received, cachedSnapshot = cached))
+                current = checked.first
+                if (checked.second == cached.meta.syncedAt) {
+                    return LoadedSnapshot(current, cached, false, null)
                 }
             }
-            val metricsResult = runCatching {
-                part("metrics", 150) { _, received, _ ->
-                    emit(SnapshotLoadProgress("Analytics", "Loading historical ticket metrics", received, cachedSnapshot = cached))
+            val fetched = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                withAccessRefresh(current) { s ->
+                    api.fastPublishedPeriod(s.accessToken, s.workspace.slug, periodDays)
                 }
             }
-
-            // Prevent mixing pages from two different hourly GitHub sync versions.
-            response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                withAccessRefresh(current) { api.snapshotMeta(it.accessToken) }
+            current = fetched.first
+            val report = fetched.second.data
+            if (report.meta.workspace != current.workspace.slug || report.meta.snapshotStatus != "ready")
+                throw IllegalStateException("Invalid published workspace report")
+            emit(SnapshotLoadProgress(stage = "Published report", detail = "Period is ready",
+                received = report.tickets.size, cachedSnapshot = report))
+            // A cache write is not required for an online, already-verified report to display.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { secure.write(fastCacheName(current,periodDays), report.toJson().toString()) }
             }
-            current = response.first
-            val finalMeta = response.second
-            if (finalMeta.workspace != initialMeta.workspace ||
-                finalMeta.syncedAt != initialMeta.syncedAt ||
-                finalMeta.syncStatus != "ok" || finalMeta.snapshotStatus != "ready") {
-                throw IllegalStateException("Server published or started another sync during download. Previous complete snapshot kept; refresh again.")
-            }
-            val data = SnapshotData(
-                finalMeta, ticketRows.toList(), fields, forms, agents, groups,
-                slaResult.getOrNull().orEmpty(),
-                slaLoaded = slaResult.isSuccess,
-                slaWarning = slaResult.exceptionOrNull()?.message?.take(160),
-                satisfaction = satisfactionResult.getOrNull().orEmpty(),
-                metrics = metricsResult.getOrNull().orEmpty(),
-                satisfactionLoaded = satisfactionResult.isSuccess,
-                metricsLoaded = metricsResult.isSuccess,
-                satisfactionWarning = satisfactionResult.exceptionOrNull()?.message?.take(160),
-                metricsWarning = metricsResult.exceptionOrNull()?.message?.take(160)
-            )
-            // A failed local cache write must not discard a successfully verified server report.
-            val cacheProblem = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { secure.write(cacheName(current), data.toJson().toString()) }.exceptionOrNull()
-            }
-            return LoadedSnapshot(current, data, false,
-                cacheProblem?.let { "Report is live, but offline cache could not be updated" })
+            return LoadedSnapshot(current, report, false, null)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return LoadedSnapshot(current, cached, cached != null,
-                e.message ?: "Snapshot refresh failed. Previous complete report preserved.")
+                e.message ?: "Published report unavailable; saved version preserved")
         }
     }
 

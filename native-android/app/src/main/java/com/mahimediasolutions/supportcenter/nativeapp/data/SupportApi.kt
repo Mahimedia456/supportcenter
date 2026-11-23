@@ -13,6 +13,8 @@ import java.net.URL
 class HttpProblem(val httpStatus: Int, message: String) : Exception(message)
 
 /** Authenticated HTTPS only; the Android client never receives a Supabase/Zendesk secret. */
+internal data class FastPublishedPeriod(val data: SnapshotData, val version: String, val period: String, val summary: JSONObject)
+
 internal class SupportApi {
     private val base = BuildConfig.API_BASE_URL.trimEnd('/')
 
@@ -77,7 +79,7 @@ internal class SupportApi {
     }
 
     fun snapshotMeta(token: String): SnapshotMeta =
-        SnapshotMeta.fromJson(request("/api/zendesk-cache-snapshot?part=meta", token = token))
+        SnapshotMeta.fromJson(request("/api/zendesk-mobile-snapshot?part=meta", token = token))
 
     /**
      * Streaming, bounded JSON parser for large paged snapshots.
@@ -140,10 +142,13 @@ internal class SupportApi {
 
     /** Workspace isolation, bounded pagination and streaming response parsing. */
     fun snapshotPartPage(token: String, workspace: String, part: String,
-                         offset: Int, limit: Int = 60): Pair<List<JSONObject>, Int?> {
+                         offset: Int, limit: Int = 60, periodDays: Int = 90, version: String? = null): Pair<List<JSONObject>, Int?> {
         require(part in setOf("tickets", "fields", "forms", "groups", "agents", "metric-events", "satisfaction", "metrics"))
         require(offset >= 0 && limit in 1..100)
-        val path = "/api/zendesk-cache-snapshot?part=$part&offset=$offset&limit=$limit"
+        val period = if (periodDays == 1) "today" else periodDays.toString()
+        require(period in setOf("today", "7", "30", "60", "90"))
+        val versionQuery = version?.let { "&version=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+        val path = "/api/zendesk-mobile-snapshot?part=$part&period=$period&offset=$offset&limit=$limit$versionQuery"
         val connection = URL("$base$path").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
@@ -221,6 +226,52 @@ internal class SupportApi {
         val next = if (response.optBoolean("done", false)) null
             else response.optInt("nextOffset", -1).takeIf { it > offset }
         return rows to next
+    }
+
+    /** Cheap version check; a cached report needs no body download. */
+    fun fastPublishedVersion(token: String, workspace: String, days: Int): String {
+        val period = if (days == 1) "today" else days.toString()
+        val meta = request("/api/zendesk-mobile-period?period=$period&meta=1", token = token)
+        if (meta.optString("workspace") != workspace || meta.optString("snapshotStatus") != "ready")
+            throw IOException("Published meta workspace mismatch")
+        return meta.getString("version")
+    }
+
+    /** One authenticated read from the committed period table, never an import. */
+    fun fastPublishedPeriod(token: String, workspace: String, days: Int): FastPublishedPeriod {
+        val period = if (days == 1) "today" else days.toString()
+        require(period in setOf("today", "30", "60", "90"))
+        val connection = URL("$base/api/zendesk-mobile-period?period=$period").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 50_000
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Accept-Encoding", "gzip")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Cache-Control", "no-store")
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val detail = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText().take(500) } ?: ""
+                val error = runCatching { JSONObject(detail) }.getOrNull()
+                throw HttpProblem(status, error?.optString("error")?.take(200) ?: "Published period HTTP $status")
+            }
+            val input = if (connection.contentEncoding?.contains("gzip", ignoreCase = true) == true)
+                java.util.zip.GZIPInputStream(connection.inputStream) else connection.inputStream
+            val root = input.use { stream ->
+                JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                    readJsonValue(reader) as? JSONObject
+                        ?: throw IOException("Malformed published period JSON")
+                }
+            }
+            if (root.optString("workspace") != workspace || root.optString("period") != period ||
+                root.optString("snapshotStatus") != "ready") throw IOException("Published period workspace/version mismatch")
+            val data = SnapshotData.fromJson(root.getJSONObject("report"))
+            val version = root.getString("version")
+            if (data.meta.workspace != workspace || data.meta.syncedAt != version ||
+                data.meta.snapshotStatus != "ready") throw IOException("Unverified published report")
+            return FastPublishedPeriod(data, version, period, root.optJSONObject("summary") ?: JSONObject())
+        } finally { connection.disconnect() }
     }
 
     fun ticketConversation(token: String, ticketId: Long, workspace: String): TicketConversation {
