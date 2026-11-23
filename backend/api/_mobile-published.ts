@@ -1,4 +1,5 @@
 import type {Client} from 'pg';
+import {publishPeriodReports} from './_mobile-period-reports';
 
 type WorkspaceSlug = 'atomos' | 'angelbird';
 
@@ -123,6 +124,8 @@ export async function publishMobileSnapshot(client:Client,workspace:WorkspaceSlu
     const summary=result.rows[0]?.summary||{};
     await client.query('UPDATE public.support_mobile_published SET summary=$2::jsonb WHERE workspace_slug=$1',
       [workspace,JSON.stringify(summary)]);
+    // Publish all four period reports BEFORE committing this version.
+    await publishPeriodReports(client,workspace);
     await client.query('COMMIT');
     return {workspace,stage:'publish',done:true,version:row.synced_at,counts:summary};
   } catch(e) {
