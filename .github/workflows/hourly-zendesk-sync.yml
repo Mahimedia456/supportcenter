@@ -3,7 +3,7 @@ name: Hourly Zendesk Snapshot Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: '12 * * * *'
+    - cron: '37 * * * *'
 
 permissions:
   contents: read
