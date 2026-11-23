@@ -101,5 +101,11 @@ jobs:
               sleep 2
             done
             [[ "$finished" == true ]] || { echo "$workspace/conversations exceeded batch cap"; exit 1; }
+            # Publish ONLY after every staged import and conversation stage completed.
+            # Last published mobile report remains unchanged during this import.
+            call_stage "$workspace" publish
+            jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null || {
+              echo "$workspace/publish failed"; exit 1;
+            }
             echo "=== Completed: $workspace ==="
           done

@@ -54,6 +54,9 @@ internal class SecureFiles(private val context: Context) {
     fun read(name: String): String? {
         val f = fileFor(name)
         if (!f.exists()) return null
+        // A legacy oversized snapshot could cause a second OOM during JSONObject restore.
+        // Never delete it here; ignore it and fetch a fresh compact snapshot instead.
+        if (name.startsWith("snapshot-") && f.length() > 18L * 1024L * 1024L) return null
         return try {
             val data = f.readBytes()
             if (data.size < 29) return null

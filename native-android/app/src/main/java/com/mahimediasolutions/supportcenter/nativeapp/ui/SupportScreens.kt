@@ -159,9 +159,9 @@ private data class TabItem(val title: String, val icon: ImageVector)
 private val tabs = listOf(
     TabItem("Overview", Icons.Outlined.Dashboard),
     TabItem("Tickets", Icons.Outlined.ConfirmationNumber),
-    TabItem("Insights", Icons.Outlined.Assessment),
-    TabItem("Devices", Icons.Outlined.Devices),
-    TabItem("Satisfaction", Icons.Outlined.SentimentSatisfied)
+    TabItem("RMA", Icons.Outlined.Assessment),
+    TabItem("Satisfaction", Icons.Outlined.SentimentSatisfied),
+    TabItem("Devices", Icons.Outlined.Devices)
 )
 
 @Composable
@@ -170,6 +170,7 @@ private fun MainShell(state: MainUiState, onRefresh: () -> Unit, onLogout: () ->
                       onOpenTicket: (Long) -> Unit, onOpenDevice: (String) -> Unit,
                       onDetailBack: () -> Unit, onRefreshConversation: () -> Unit, onClearCache: () -> Unit) {
     val session = requireNotNull(state.session)
+    var ticketPreset by remember(session.workspace.slug) { mutableStateOf("all") }
     Scaffold(
         containerColor = Back,
         bottomBar = { ProfessionalBottomBar(state.tab, onTab) }
@@ -195,23 +196,23 @@ private fun MainShell(state: MainUiState, onRefresh: () -> Unit, onLogout: () ->
                 }
             }
             if (state.error != null && state.snapshot != null) ErrorBanner(state.error, state.cached)
+            ProgressiveSyncStrip(state)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
                     state.selectedTicketId != null -> NativeTicketDetailScreen(
                         state, onDetailBack, onRefreshConversation)
-                    state.selectedDevice != null -> NativeDeviceDetailScreen(
-                        state, onDetailBack, onOpenTicket)
+                    state.selectedDevice != null -> ParityDeviceDetailScreen(state, onDetailBack, onOpenTicket, onPeriod)
                     // No snapshot means no verified metrics. Do not show fabricated zero cards.
+                    state.snapshot == null && state.refreshing && state.tab != "Profile" -> NativeProgressiveSnapshotScreen(state)
                     state.snapshot == null && state.tab != "Profile" -> MissingSnapshotScreen(state, onRefresh)
-                    state.tab == "Overview" -> NativeOverviewScreen(
-                        state, onPeriod, onOpenTicket, onRefresh)
-                    state.tab == "Tickets" -> NativeTicketsScreen(state, onPeriod, onOpenTicket)
-                    state.tab == "RMA" -> NativeRmaScreen(state, onPeriod, onOpenTicket)
-                    state.tab == "Devices" -> NativeDevicesScreen(state, onPeriod, onOpenDevice)
-                    state.tab == "Satisfaction" -> NativeSatisfactionScreen(state, onPeriod, onOpenTicket)
-                    state.tab == "Insights" -> NativeInsightsScreen(state, onPeriod, onOpenTicket)
-                    state.tab == "Alerts" -> NativeAlertsScreen(state, onOpenTicket)
-                    state.tab == "Profile" -> NativeProfileScreen(state, onRefresh, onClearCache, onLogout)
+                    state.tab == "Overview" -> ParityOverviewScreen(state, onPeriod, onOpenTicket, onRefresh) { preset -> ticketPreset = preset; onTab("Tickets") }
+                    state.tab == "Tickets" -> ParityTicketsScreen(state, onPeriod, onOpenTicket, ticketPreset) { ticketPreset = "all" }
+                    state.tab == "RMA" -> ParityRmaScreen(state, onPeriod, onOpenTicket)
+                    state.tab == "Devices" -> ParityDevicesScreen(state, onPeriod, onOpenDevice)
+                    state.tab == "Satisfaction" -> ParitySatisfactionScreen(state, onPeriod, onOpenTicket)
+                    state.tab == "Insights" -> ParityInsightsScreen(state, onPeriod, onOpenTicket)
+                    state.tab == "Alerts" -> ParityAlertsScreen(state, onPeriod) { preset -> ticketPreset = preset; onTab("Tickets") }
+                    state.tab == "Profile" -> ParityProfileScreen(state, onRefresh, onClearCache, onLogout)
                     else -> NativeInsightsScreen(state, onPeriod, onOpenTicket)
                 }
             }

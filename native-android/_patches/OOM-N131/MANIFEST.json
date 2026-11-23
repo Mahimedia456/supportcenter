@@ -1,0 +1,27 @@
+{
+  "package": "SupportCenter_NATIVE_OOM_STREAMING_HOTFIX",
+  "version": "N13.1",
+  "files": [
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportApi.kt",
+      "before_sha256": [
+        "a60ebb599c5911dad6f7dc7b5c748ce10750da3f53118dcee04f80f8e7005a59"
+      ],
+      "after_sha256": "71c6a893e2d287a6ad7c95d0d93d19bdaa5725652371c54e6e5940f4a7bf5290"
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportRepository.kt",
+      "before_sha256": [
+        "772d3b3f6a763dd5895c882b1913fbb0ccfac59d6909e5574dc0aedf776f2f5d"
+      ],
+      "after_sha256": "1c7d5acba8cc3b2a017604a0375c5f7c2c207dcd4982f78e1b9998c9dabfacb7"
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SecureFiles.kt",
+      "before_sha256": [
+        "c611ad1951818f1a5e0c6daf26e55a5bf92cfb4a5e9c01b3543bf399909415ad"
+      ],
+      "after_sha256": "bef497b15dd90557daf21dcabcf6b2c15ebe555a7700047b2ebf5daa6d09194c"
+    }
+  ]
+}

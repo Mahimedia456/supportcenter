@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mahimediasolutions.supportcenter.nativeapp.data.SnapshotData
+import com.mahimediasolutions.supportcenter.nativeapp.data.SnapshotLoadProgress
+import com.mahimediasolutions.supportcenter.nativeapp.data.Ticket
 import com.mahimediasolutions.supportcenter.nativeapp.data.SupportRepository
 import com.mahimediasolutions.supportcenter.nativeapp.data.SupportSession
 import com.mahimediasolutions.supportcenter.nativeapp.data.TicketConversation
@@ -27,7 +29,11 @@ data class MainUiState(
     val selectedDevice: String? = null,
     val conversation: TicketConversation? = null,
     val conversationLoading: Boolean = false,
-    val conversationError: String? = null
+    val conversationError: String? = null,
+    val snapshotStage: String = "",
+    val snapshotStageDetail: String = "",
+    val snapshotItemsReceived: Int = 0,
+    val previewTickets: List<Ticket> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,19 +67,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var lastMetaCheckElapsed: Long = 0L
+
+    /** Foreground resume / periodic check. Downloads nothing if server version is unchanged. */
+    fun checkForUpdates() {
+        if (_state.value.session == null || _state.value.refreshing) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastMetaCheckElapsed < 2 * 60_000L) return
+        refreshSnapshot()
+    }
+
     fun refreshSnapshot() {
         val session = _state.value.session ?: return
         if (_state.value.refreshing) return
+        lastMetaCheckElapsed = android.os.SystemClock.elapsedRealtime()
         viewModelScope.launch {
-            _state.value = _state.value.copy(refreshing = true, error = null)
-            val loaded = withContext(Dispatchers.IO) { repo.loadSnapshot(session) }
-            // Do not accept late results belonging to an old login/workspace.
-            if (_state.value.session?.user?.id != session.user.id ||
-                _state.value.session?.workspace?.id != session.workspace.id) return@launch
+            _state.value = _state.value.copy(
+                refreshing = true, error = null,
+                snapshotStage = "Checking", snapshotStageDetail = "Checking published server snapshot",
+                snapshotItemsReceived = 0, previewTickets = emptyList()
+            )
+            val loaded = repo.loadSnapshotProgressive(session) { progress ->
+                if (sameSession(session)) {
+                    // Cache is published immediately, even before the first network page finishes.
+                    _state.value = _state.value.copy(
+                        snapshot = progress.cachedSnapshot ?: _state.value.snapshot,
+                        cached = progress.cachedSnapshot != null && _state.value.snapshot == null || _state.value.cached,
+                        snapshotStage = progress.stage,
+                        snapshotStageDetail = progress.detail,
+                        snapshotItemsReceived = progress.received,
+                        previewTickets = progress.previewTickets
+                    )
+                }
+            }
+            if (!sameSession(session)) return@launch
+            // Automatic version checks must not unexpectedly navigate the manager away
+            // from a ticket, device, or active tab.
+            val selected = _state.value.selectedTicketId?.takeIf { id ->
+                loaded.data?.tickets?.any { it.id == id } == true
+            }
             _state.value = _state.value.copy(
                 refreshing = false, session = loaded.session, snapshot = loaded.data,
                 cached = loaded.fromCache, error = loaded.error,
-                conversation = null, selectedTicketId = null, selectedDevice = null
+                snapshotStage = "", snapshotStageDetail = "", snapshotItemsReceived = 0,
+                previewTickets = emptyList(),
+                selectedTicketId = selected,
+                conversation = if (selected != null) _state.value.conversation else null
             )
         }
     }

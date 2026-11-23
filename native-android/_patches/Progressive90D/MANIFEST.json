@@ -1,0 +1,40 @@
+{
+  "files": [
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SupportRepository.kt",
+      "sha256": "772d3b3f6a763dd5895c882b1913fbb0ccfac59d6909e5574dc0aedf776f2f5d",
+      "allowedSha256": [
+        "df41bfcc2642705e94c98f0043fbf8f2a4dedf9747177db959c2a788fb5d2829"
+      ],
+      "new": false
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/MainViewModel.kt",
+      "sha256": "39aed086127aff5cd5c20c1f716d56659482b29872cffcdd10a8d6c0d16f9cf9",
+      "allowedSha256": [
+        "bae2c1fa8433a3081a60ec8314d17ad04bb923ebaccad21f941e1515bcba0f9e"
+      ],
+      "new": false
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/MainActivity.kt",
+      "sha256": "e535509ab504c6c44ea3d18c44fe5db846ce9f50240d31cd18d06b34fdff2169",
+      "allowedSha256": [
+        "d86ef934f2ce5f752e3944da888913b518e4e707553b41ad244f2ae4b4e9dc2a"
+      ],
+      "new": false
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/data/SnapshotLoadProgress.kt",
+      "sha256": "afd27ac32b76e87105867dc36f8dbfb0d5d4ed4aa471d484883ac68075147a3c",
+      "allowedSha256": [],
+      "new": true
+    },
+    {
+      "path": "app/src/main/java/com/mahimediasolutions/supportcenter/nativeapp/ui/ProgressiveSnapshotScreen.kt",
+      "sha256": "2a3cb37a7d7dfd740ac83c2cc16b87d8d5fd78ecada3ee70ebf38aead152c0c7",
+      "allowedSha256": [],
+      "new": true
+    }
+  ]
+}

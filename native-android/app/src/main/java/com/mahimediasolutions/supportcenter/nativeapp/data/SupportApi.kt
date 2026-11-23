@@ -1,6 +1,10 @@
 package com.mahimediasolutions.supportcenter.nativeapp.data
 
 import com.mahimediasolutions.supportcenter.nativeapp.BuildConfig
+import android.util.JsonReader
+import android.util.JsonToken
+import java.io.InputStreamReader
+import java.io.IOException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -30,7 +34,17 @@ internal class SupportApi {
             }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "{}"
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                val buffer = CharArray(8192)
+                val content = StringBuilder()
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count < 0) break
+                    if (content.length + count > 2_000_000) throw IOException("Non-paged API response exceeded 2 MB")
+                    content.append(buffer, 0, count)
+                }
+                content.toString()
+            } ?: "{}"
             val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
             if (status !in 200..299) {
                 // NestJS returns both {error:"Unauthorized", message:"Invalid email or password."}.
@@ -65,24 +79,138 @@ internal class SupportApi {
     fun snapshotMeta(token: String): SnapshotMeta =
         SnapshotMeta.fromJson(request("/api/zendesk-cache-snapshot?part=meta", token = token))
 
-    /** Verifies both workspace isolation and monotonic pagination for every part. */
-    fun snapshotPartPage(token: String, workspace: String, part: String,
-                         offset: Int, limit: Int = 150): Pair<List<JSONObject>, Int?> {
-        require(part in setOf("tickets", "fields", "forms", "groups", "agents", "metric-events", "satisfaction", "metrics"))
-        require(offset >= 0 && limit in 1..150)
-        val response = request(
-            "/api/zendesk-cache-snapshot?part=$part&offset=$offset&limit=$limit", token = token
-        )
-        if (response.optString("workspace") != workspace || response.optString("part") != part) {
-            throw IllegalStateException("Workspace or snapshot part mismatch")
+    /**
+     * Streaming, bounded JSON parser for large paged snapshots.
+     * This deliberately bypasses request() (which reads the entire response into a String)
+     * so a page is never duplicated as String + JSONObject + JSONArray.
+     */
+    private fun readJsonValue(r: JsonReader, depth: Int = 0): Any {
+        if (depth > 32) throw IOException("Snapshot JSON nesting exceeded safety limit")
+        return when (r.peek()) {
+            JsonToken.BEGIN_OBJECT -> {
+                val obj = JSONObject()
+                r.beginObject()
+                while (r.hasNext()) obj.put(r.nextName(), readJsonValue(r, depth + 1))
+                r.endObject()
+                obj
+            }
+            JsonToken.BEGIN_ARRAY -> {
+                val arr = JSONArray()
+                r.beginArray()
+                while (r.hasNext()) arr.put(readJsonValue(r, depth + 1))
+                r.endArray()
+                arr
+            }
+            JsonToken.STRING -> r.nextString()
+            JsonToken.NUMBER -> {
+                val value = r.nextString()
+                value.toLongOrNull() ?: value.toDoubleOrNull() ?: value
+            }
+            JsonToken.BOOLEAN -> r.nextBoolean()
+            JsonToken.NULL -> { r.nextNull(); JSONObject.NULL }
+            else -> throw IOException("Unexpected JSON token in snapshot response")
         }
-        val arr = response.optJSONArray("items") ?: throw IllegalStateException("Missing '$part' items")
-        val rows = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-        if (rows.size != arr.length()) throw IllegalStateException("Malformed '$part' page")
-        if (response.optBoolean("done", false)) return rows to null
-        val next = response.optInt("nextOffset", -1)
-        if (next <= offset) throw IllegalStateException("Non-progressing '$part' cursor")
-        return rows to next
+    }
+
+    /**
+     * Keep every field that the currently implemented Kotlin screens/models consume.
+     * The complete original source remains unmodified in Supabase. These are compact
+     * phone-side projections, NOT changes to the 90-day backend dataset.
+     */
+    private fun mobileFields(part: String): List<String> = when (part) {
+        "tickets" -> listOf("id", "subject", "status", "priority", "created_at",
+            "updated_at", "description", "assignee_id", "requester_id", "group_id",
+            "ticket_form_id", "type", "tags", "custom_fields")
+        "metric-events" -> listOf("ticket_id", "type", "time", "created_at", "updated_at")
+        "metrics" -> listOf("ticket_id", "replies", "reopens", "reply_time_in_minutes")
+        "satisfaction" -> listOf("id", "ticket_id", "score", "comment", "created_at", "updated_at")
+        "fields" -> listOf("id", "title", "raw_title", "description", "active",
+            "custom_field_options", "system_field_options")
+        "forms", "agents", "groups" -> listOf("id", "name", "display_name")
+        else -> throw IllegalArgumentException("Invalid snapshot part")
+    }
+
+    private fun compactItem(part: String, original: JSONObject): JSONObject {
+        val projected = JSONObject()
+        for (name in mobileFields(part)) {
+            if (original.has(name)) projected.put(name, original.opt(name))
+        }
+        return projected
+    }
+
+    /** Workspace isolation, bounded pagination and streaming response parsing. */
+    fun snapshotPartPage(token: String, workspace: String, part: String,
+                         offset: Int, limit: Int = 60): Pair<List<JSONObject>, Int?> {
+        require(part in setOf("tickets", "fields", "forms", "groups", "agents", "metric-events", "satisfaction", "metrics"))
+        require(offset >= 0 && limit in 1..100)
+        val path = "/api/zendesk-cache-snapshot?part=$part&offset=$offset&limit=$limit"
+        val connection = URL("$base$path").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 40_000
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Cache-Control", "no-store")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val detail = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                    val block = CharArray(2048)
+                    val count = reader.read(block)
+                    if (count > 0) String(block, 0, count) else ""
+                } ?: ""
+                val error = runCatching { JSONObject(detail) }.getOrNull()
+                val message = error?.optString("message")?.ifBlank { error.optString("error") }
+                    ?: "Snapshot backend HTTP $status"
+                throw HttpProblem(status, message.take(200))
+            }
+            var responseWorkspace: String? = null
+            var responsePart: String? = null
+            var done: Boolean? = null
+            var nextOffset: Int? = null
+            var foundItems = false
+            val rows = ArrayList<JSONObject>(limit)
+            connection.inputStream.use { stream ->
+                JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                    reader.isLenient = false
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        when (reader.nextName()) {
+                            "workspace" -> responseWorkspace = reader.nextString()
+                            "part" -> responsePart = reader.nextString()
+                            "done" -> done = reader.nextBoolean()
+                            "nextOffset" -> {
+                                nextOffset = if (reader.peek() == JsonToken.NULL) {
+                                    reader.nextNull()
+                                    null
+                                } else reader.nextInt()
+                            }
+                            "items" -> {
+                                if (foundItems) throw IOException("Duplicate items in snapshot page")
+                                foundItems = true
+                                reader.beginArray()
+                                while (reader.hasNext()) {
+                                    if (rows.size >= limit) throw IOException("Page exceeded requested $limit items")
+                                    val value = readJsonValue(reader)
+                                    if (value !is JSONObject) throw IOException("Malformed item in snapshot page")
+                                    rows.add(compactItem(part, value))
+                                }
+                                reader.endArray()
+                            }
+                            else -> reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                }
+            }
+            if (responseWorkspace != workspace || responsePart != part || !foundItems || done == null) {
+                throw IOException("Snapshot page metadata or workspace mismatch")
+            }
+            if (done == true) return rows to null
+            val next = nextOffset ?: throw IOException("Missing snapshot page cursor")
+            if (next <= offset || next > 1_000_000) throw IOException("Non-progressing snapshot cursor")
+            return rows to next
+        } finally { connection.disconnect() }
     }
 
     /** Legacy signature retained for Batch 1 tests; Batch 2 uses snapshotPartPage. */
