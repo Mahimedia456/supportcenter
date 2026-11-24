@@ -147,9 +147,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openTicket(ticketId: Long) {
         val exists = _state.value.snapshot?.tickets?.any { it.id == ticketId } == true
         if (!exists) { _state.value = _state.value.copy(error = "Ticket not found in current workspace snapshot") ; return }
+        // P32_NO_AUTO_CONVERSATION: subjects and ticket details are in the published report.
         _state.value = _state.value.copy(selectedTicketId = ticketId, selectedDevice = null,
-            conversation = null, conversationError = null, conversationLoading = true)
-        refreshConversation()
+            conversation = null, conversationError = null, conversationLoading = false)
     }
 
     fun openDevice(device: String) {

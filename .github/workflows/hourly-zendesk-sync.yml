@@ -159,18 +159,9 @@ jobs:
               done
               [[ "$finished" == true ]] || { echo "$workspace/$stage exhausted chunk limit"; exit 1; }
             done
-            # Pre-cache latest 80 ticket conversations; details for other
-            # tickets are loaded on demand by the authenticated backend.
-            finished=false
-            for i in $(seq 1 30); do
-              call_stage "$workspace" conversations
-              if jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null; then
-                finished=true; break
-              fi
-              sleep 2
-            done
-            [[ "$finished" == true ]] || { echo "$workspace/conversations exceeded batch cap"; exit 1; }
-            # Publish ONLY after every staged import and conversation stage completed.
+            # P32_SUBJECT_ONLY_SYNC: subjects and metadata already come from tickets stage.
+            # No scheduled conversation/comment fetch. Preserve all KPI and RMA stages.
+            # Publish only after all required source stages have completed.
             # Last published mobile report remains unchanged during this import.
             call_stage "$workspace" publish
             jq -e '.done == true' /tmp/supportcenter-sync-stage.json >/dev/null || {

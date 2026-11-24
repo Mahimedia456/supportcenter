@@ -49,6 +49,9 @@ export default async function handler(req:any,res:any){
     res.setHeader('Vary','Authorization, Accept-Encoding');
     return res.status(200).end(compressed);
   }catch(err:any){
+    // P32_EXPIRED_ACCESS_401: Android auto-refresh only retries HTTP 401.
+    if (['TokenExpiredError','JsonWebTokenError','NotBeforeError'].includes(String(err?.name||'')))
+      return res.status(401).json({error:'SESSION_EXPIRED'});
     return res.status(500).json({error:String(err?.message||'Published period unavailable').slice(0,300)});
   }finally{if(client)await client.end().catch(()=>undefined);}
 }

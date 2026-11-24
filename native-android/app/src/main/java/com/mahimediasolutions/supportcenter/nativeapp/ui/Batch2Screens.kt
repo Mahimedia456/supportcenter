@@ -254,11 +254,12 @@ private fun DetailLine(label: String, value: String) {
     }
 }
 
+// P32_SUBJECT_DETAIL_ONLY: no comments, internal notes or description in the ticket detail UI.
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun NativeTicketDetailScreen(state: MainUiState, onBack: () -> Unit, onRefreshConversation: () -> Unit) {
     val data = state.snapshot
     val ticket = data?.tickets?.firstOrNull { it.id == state.selectedTicketId }
-    val conversation = state.conversation
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 30.dp)) {
         item {
@@ -276,11 +277,8 @@ fun NativeTicketDetailScreen(state: MainUiState, onBack: () -> Unit, onRefreshCo
                     Text("${ticket.status.uppercase(Locale.ROOT)}  ·  ${ticket.priority.uppercase(Locale.ROOT)}",
                         fontSize = 11.sp, color = Primary, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
-                    Text(ticket.subject, fontSize = 20.sp, color = Foreground, fontWeight = FontWeight.Bold)
-                    if (ticket.description.isNotBlank()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(ticket.description, color = Secondary, fontSize = 13.sp, maxLines = 10)
-                    }
+                    Text(ticket.subject.ifBlank { "Untitled ticket" }, fontSize = 20.sp,
+                        color = Foreground, fontWeight = FontWeight.Bold)
                 }
             }
             item {
@@ -303,37 +301,6 @@ fun NativeTicketDetailScreen(state: MainUiState, onBack: () -> Unit, onRefreshCo
                 Panel {
                     Text("Custom fields", color = Foreground, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     customRows.forEach { (label, value) -> DetailLine(label, value) }
-                }
-            }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Conversation", color = Foreground, fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onRefreshConversation, enabled = !state.conversationLoading) {
-                        Icon(Icons.Outlined.Refresh, "Refresh conversation")
-                    }
-                }
-                Text("Saved server conversation; read-only view", color = Secondary, fontSize = 11.sp)
-                if (state.conversationLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (!state.conversationError.isNullOrBlank()) {
-                    Text(state.conversationError, color = Warning, fontSize = 12.sp)
-                }
-                if (conversation != null) {
-                    Text("${conversation.commentCount} comments · Updated ${SupportAnalytics.shortDate(conversation.syncedAt.orEmpty())}",
-                        color = Secondary, fontSize = 11.sp)
-                }
-            }
-            if (conversation != null) {
-                if (conversation.comments.isEmpty()) item { EmptyMessage("No conversation comments available.") }
-                items(conversation.comments) { comment ->
-                    Panel {
-                        Text("Author #${comment.authorId ?: "—"} · ${SupportAnalytics.shortDate(comment.createdAt)}",
-                            color = Primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(5.dp))
-                        Text(comment.body.ifBlank { "(No text content)" }, color = Foreground, fontSize = 13.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text(if (comment.isPublic) "Public reply" else "Internal note", color = Secondary, fontSize = 11.sp)
-                    }
                 }
             }
         }

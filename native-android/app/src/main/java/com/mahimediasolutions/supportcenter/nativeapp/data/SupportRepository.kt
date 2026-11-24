@@ -25,14 +25,12 @@ internal class SupportRepository(context: Context) {
         secure.write("session.dat", it.toJson().toString())
     }
 
+    // P32_SINGLE_FLIGHT_REFRESH: do not rotate tokens at every app launch.
     fun restoreSession(): SupportSession? {
         val raw = secure.read("session.dat") ?: return null
         return try {
             val existing = SupportSession.fromJson(JSONObject(raw))
-            val next = api.refresh(existing.refreshToken)
-            verifyAccount(existing, next)
-            secure.write("session.dat", next.toJson().toString())
-            next
+            if (!tokenExpiresSoon(existing)) existing else refreshSingleFlight(existing)
         } catch (e: HttpProblem) {
             if (e.httpStatus == 401 || e.httpStatus == 403) {
                 secure.delete("session.dat")
@@ -104,15 +102,57 @@ internal class SupportRepository(context: Context) {
         )
     }
 
-    private fun <T> withAccessRefresh(session: SupportSession,
-                                      operation: (SupportSession) -> T): Pair<SupportSession, T> {
-        return try { session to operation(session) }
-        catch (e: HttpProblem) {
+    private val refreshGate = Any()
+
+    private fun tokenExpiresSoon(session: SupportSession): Boolean =
+        runCatching {
+            java.time.Instant.parse(session.accessTokenExpiresAt).toEpochMilli() <=
+                System.currentTimeMillis() + 120_000L
+        }.getOrDefault(true)
+
+    private fun newestSameAccount(observed: SupportSession): SupportSession {
+        val persisted = runCatching {
+            secure.read("session.dat")?.let { SupportSession.fromJson(JSONObject(it)) }
+        }.getOrNull() ?: return observed
+        return if (persisted.user.id == observed.user.id &&
+            persisted.workspace.id == observed.workspace.id &&
+            persisted.workspace.slug == observed.workspace.slug) persisted else observed
+    }
+
+    /** Backend refresh tokens rotate on use: only one thread may rotate a session. */
+    private fun refreshSingleFlight(observed: SupportSession): SupportSession = synchronized(refreshGate) {
+        val latest = newestSameAccount(observed)
+        if (latest.refreshToken != observed.refreshToken) {
+            // Another request already rotated. Never replay the revoked token.
+            latest
+        } else {
+            val renewed = api.refresh(latest.refreshToken)
+            verifyAccount(latest, renewed)
+            secure.write("session.dat", renewed.toJson().toString())
+            renewed
+        }
+    }
+
+    private fun <T> withAccessRefresh(
+        session: SupportSession,
+        operation: (SupportSession) -> T
+    ): Pair<SupportSession, T> {
+        var current = newestSameAccount(session)
+        if (tokenExpiresSoon(current)) {
+            try {
+                current = refreshSingleFlight(current)
+            } catch (e: HttpProblem) {
+                // On transient refresh trouble, still try the existing access token.
+                // A genuinely expired/revoked session requires re-login.
+                if (e.httpStatus == 401 || e.httpStatus == 403) throw e
+            }
+        }
+        return try {
+            current to operation(current)
+        } catch (e: HttpProblem) {
             if (e.httpStatus != 401) throw e
-            val next = api.refresh(session.refreshToken)
-            verifyAccount(session, next)
-            secure.write("session.dat", next.toJson().toString())
-            next to operation(next)
+            val renewed = refreshSingleFlight(current)
+            renewed to operation(renewed)
         }
     }
 
